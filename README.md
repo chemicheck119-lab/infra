@@ -36,6 +36,12 @@ scripts/run_speech_eval.sh 3
 scripts/run_speech_eval.sh
 ```
 
+GPU는 현재 할당량이 0이라 실행할 수 없습니다. 다음 명령은 비용을 발생시키지 않고 `asia-northeast3`의 Cloud Run L4 한 장만 요청하며, 승인되어도 Job을 자동 실행하지 않습니다.
+
+```bash
+scripts/request_cloud_run_l4_quota.sh GOOGLE_ACCOUNT_EMAIL
+```
+
 Cloud Run Job은 자동 예약되지 않고 외부 요청을 받는 서비스도 아닙니다. 단일 task, 병렬도 1, 재시도 0, 최대 2시간, CPU 4개·메모리 8GiB로 제한합니다. 이 구성과 개발용 실행은 상용 운영 또는 고가용성 경험이 아닙니다.
 
 ## 비용 경계
