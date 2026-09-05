@@ -41,7 +41,15 @@ fi
 
 gcloud storage buckets add-iam-policy-binding "gs://${ML_BUCKET}" \
   --member="serviceAccount:${ML_RUNNER_SERVICE_ACCOUNT}" \
-  --role="roles/storage.objectUser" \
+  --role="roles/storage.objectViewer" \
   --project="${PROJECT_ID}" >/dev/null
+gcloud storage buckets add-iam-policy-binding "gs://${ML_BUCKET}" \
+  --member="serviceAccount:${ML_RUNNER_SERVICE_ACCOUNT}" \
+  --role="roles/storage.objectCreator" \
+  --project="${PROJECT_ID}" >/dev/null
+gcloud storage buckets remove-iam-policy-binding "gs://${ML_BUCKET}" \
+  --member="serviceAccount:${ML_RUNNER_SERVICE_ACCOUNT}" \
+  --role="roles/storage.objectUser" \
+  --project="${PROJECT_ID}" >/dev/null 2>&1 || true
 
 echo "ML bucket and least-privilege runner are ready."
