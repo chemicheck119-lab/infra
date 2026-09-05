@@ -15,9 +15,11 @@ require_project
 
 INPUT_PREFIX="gs://${ML_BUCKET}/raw/aihub/71768/gwangju-fire"
 OUTPUT_PREFIX="gs://${ML_BUCKET}/experiments/speech/aihub-71768-gwangju-fire"
+MANIFEST="gs://${ML_BUCKET}/manifests/aihub-71768-gwangju-fire-validation.json"
 JOB_ARGUMENTS=(
   "--audio-archive=${INPUT_PREFIX}/VS_광주_화재.zip"
   "--label-archive=${INPUT_PREFIX}/VL_광주_화재.zip"
+  "--dataset-manifest=${MANIFEST}"
   "--hotwords-file=/app/config/domain_hotwords.txt"
   "--model=small"
   "--device=cpu"

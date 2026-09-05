@@ -26,7 +26,8 @@
 
 ```bash
 scripts/setup_gcp_ml.sh
-scripts/upload_aihub_gwangju_fire.sh /secure/AIHUB_DATA_ROOT
+scripts/upload_aihub_gwangju_fire.sh \
+  /secure/AIHUB_DATA_ROOT /path/to/data-pipeline
 scripts/build_speech_image.sh /path/to/speech-service baseline-v1
 scripts/deploy_speech_eval_job.sh \
   asia-northeast3-docker.pkg.dev/chemi-check/chemicheck119/speech-eval:baseline-v1
