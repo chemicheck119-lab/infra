@@ -56,15 +56,13 @@ Cloud Run Job은 자동 예약되지 않고 외부 요청을 받는 서비스도
 
 이는 GCP에서 개발용 평가 Job을 실행한 증거이며 상용 서비스 운영 실적이 아닙니다.
 
-## Whisper LoRA 1회성 T4 runner
+## Whisper LoRA 1회성 L4 runner
 
-서울 리전에는 standard T4 quota 1장이 있고 사용량은 0이지만, T4가 노출되는
-`asia-northeast3-b/c` 요청이 모두 instance 생성 전 재고 부족으로 거부됐습니다.
-동일한 `n1-standard-4`·T4 1장·100GiB `pd-balanced` disk 조건을 보존하고,
-quota 1장·사용량 0과 T4 노출을 확인한 도쿄에서도 `asia-northeast1-a`가 같은 이유로
-거부되어, 같은 리전의 마지막 확인 후보 `asia-northeast1-c`에서 실행합니다.
-이는 자동 zone retry가 아니라 새 authorization을 사용하는 별도 1회 시도입니다. 데이터
-bucket은 서울에 유지하므로 아시아 리전 간 artifact 전송비를 실행 전 견적에 포함합니다.
+서울·도쿄에서 T4가 노출되는 네 zone 요청이 모두 instance 생성 전 재고 부족으로
+거부됐습니다. 무기한 zone 순회를 중단하고, 서울 `asia-northeast3-a`에서 지원·quota를
+확인한 `g2-standard-4`·L4 1장·100GiB `pd-balanced` disk로 실행합니다. G2 machine에는
+L4가 포함되므로 별도 accelerator flag를 사용하지 않습니다. 이는 새 authorization을
+사용하는 별도 1회 시도이며, data bucket과 runner가 모두 서울에 있습니다.
 실행은 자동화나 일정 등록 없이 사람이 정확한 `speech-service` commit과 24시간 이내 비용
 견적을 전달할 때만 시작됩니다. 견적의 authorization은 commit·누적 개발비·1회 실행에
 결합되고, 같은 ID의 quote/claim 객체는 GCS에서 원자적 최초 생성만 허용합니다.
@@ -86,9 +84,9 @@ account에는 비공개 bucket의 기존 객체 조회와 신규 객체 생성�
 허용하며 삭제·덮어쓰기는 허용하지 않습니다. 결과는 `trained_unvalidated` adapter와 집계
 보고서이며, 원본 음성·전사문·model weight를 Git에 저장하지 않습니다.
 
-현재 공식 on-demand 가격표와 USD/KRW 1,344.547원, cross-region artifact 전송비
-$0.15를 적용한 3시간 견적은 25% contingency 포함 약 3,065원입니다. network transfer
-ceiling은 $0.25, 등록된 독립 실행 ceiling은 9,032원이고 이전 개발비 ceiling을 더한
+현재 공식 on-demand 가격표의 GPU 포함 G2 machine 시간당 $0.706832276과 USD/KRW
+1,344.547원을 적용한 3시간 견적은 25% contingency 포함 약 3,654원입니다. network
+transfer ceiling은 $0.25, 등록된 독립 실행 ceiling은 9,032원이고 이전 개발비 ceiling을 더한
 전체 ceiling은 59,032원입니다. 이 값은 실행 전 견적이지 실제 청구액이나 성능 성과가
 아닙니다.
 
