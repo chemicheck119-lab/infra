@@ -22,7 +22,12 @@ grep -q '"age": 90' "${INFRA_DIRECTORY}/config/ml-bucket-lifecycle.json"
 
 LORA_RUNNER="${SCRIPT_DIRECTORY}/run_whisper_lora_once.sh"
 LORA_STARTUP="${SCRIPT_DIRECTORY}/startup_whisper_lora.sh"
-grep -q -- '--accelerator="type=${LORA_GPU_TYPE},count=1"' "${LORA_RUNNER}"
+if grep -q -- '--accelerator=' "${LORA_RUNNER}"; then
+  echo "G2 already includes its L4 accelerator" >&2
+  exit 1
+fi
+grep -q '^LORA_MACHINE_TYPE=g2-standard-4$' "${INFRA_DIRECTORY}/config/ml.env"
+grep -q '^LORA_GPU_TYPE=nvidia-l4$' "${INFRA_DIRECTORY}/config/ml.env"
 grep -q -- '--provisioning-model=STANDARD' "${LORA_RUNNER}"
 grep -q -- '--no-restart-on-failure' "${LORA_RUNNER}"
 grep -q -- '--max-run-duration="${LORA_MAX_RUN_SECONDS}s"' "${LORA_RUNNER}"
@@ -41,7 +46,7 @@ grep -q -- '--if-generation-match=0' "${LORA_RUNNER}"
 python3 -m py_compile "${SCRIPT_DIRECTORY}/validate_lora_cost_quote.py"
 grep -q '^LORA_MAX_RUN_SECONDS=10800$' "${INFRA_DIRECTORY}/config/ml.env"
 grep -q '^LORA_TRAIN_TIMEOUT_SECONDS=9900$' "${INFRA_DIRECTORY}/config/ml.env"
-grep -q '^LORA_REGION=asia-northeast1$' "${INFRA_DIRECTORY}/config/ml.env"
-grep -q '^LORA_ZONE=asia-northeast1-c$' "${INFRA_DIRECTORY}/config/ml.env"
+grep -q '^LORA_REGION=asia-northeast3$' "${INFRA_DIRECTORY}/config/ml.env"
+grep -q '^LORA_ZONE=asia-northeast3-a$' "${INFRA_DIRECTORY}/config/ml.env"
 
 echo "Infrastructure configuration checks passed."

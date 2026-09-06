@@ -21,12 +21,13 @@ FX_CEILING_KRW_PER_USD = 1_700
 CONTINGENCY_FRACTION = 0.25
 
 
-def number(value: object, name: str) -> float:
+def number(value: object, name: str, *, allow_zero: bool = False) -> float:
     if not isinstance(value, (int, float)) or isinstance(value, bool):
         raise ValueError(f"{name} must be numeric")
     result = float(value)
-    if not math.isfinite(result) or result <= 0:
-        raise ValueError(f"{name} must be finite and positive")
+    if not math.isfinite(result) or result < 0 or (result == 0 and not allow_zero):
+        qualifier = "non-negative" if allow_zero else "positive"
+        raise ValueError(f"{name} must be finite and {qualifier}")
     return result
 
 
@@ -82,12 +83,12 @@ def validate(
 
     resource = payload.get("resource")
     expected_resource = {
-        "gcp_region": "asia-northeast1",
-        "machine_type": "n1-standard-4",
-        "gpu_type": "nvidia-tesla-t4",
+        "gcp_region": "asia-northeast3",
+        "machine_type": "g2-standard-4",
+        "gpu_type": "nvidia-l4",
         "gpu_count": 1,
         "vcpu_count": 4,
-        "memory_gib": 15,
+        "memory_gib": 16,
         "boot_disk_gib": 100,
         "runtime_hours": 3.0,
     }
@@ -96,10 +97,10 @@ def validate(
     pricing = payload.get("pricing")
     if not isinstance(pricing, dict):
         raise ValueError("cost quote pricing must be an object")
-    compute_hour = (
-        number(pricing.get("gpu_usd_per_hour"), "GPU price")
-        + 4 * number(pricing.get("vcpu_usd_per_hour"), "vCPU price")
-        + 15 * number(pricing.get("memory_gib_usd_per_hour"), "memory price")
+    if pricing.get("model") != "accelerator_optimized_machine":
+        raise ValueError("cost quote pricing model does not match")
+    compute_hour = number(
+        pricing.get("machine_usd_per_hour"), "machine price"
     )
     boot_total = (
         number(pricing.get("boot_disk_usd_per_gib_month"), "disk price")
@@ -108,7 +109,9 @@ def validate(
         / number(pricing.get("month_hours"), "month hours")
     )
     network_transfer = number(
-        pricing.get("network_transfer_usd"), "network transfer price"
+        pricing.get("network_transfer_usd"),
+        "network transfer price",
+        allow_zero=True,
     )
     fx = number(payload.get("fx_krw_per_usd"), "FX rate")
     quoted_krw = math.ceil(

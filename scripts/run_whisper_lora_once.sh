@@ -71,7 +71,6 @@ gcloud compute instances create "${INSTANCE_NAME}" \
   --project="${PROJECT_ID}" \
   --zone="${LORA_ZONE}" \
   --machine-type="${LORA_MACHINE_TYPE}" \
-  --accelerator="type=${LORA_GPU_TYPE},count=1" \
   --provisioning-model=STANDARD \
   --maintenance-policy=TERMINATE \
   --no-restart-on-failure \
