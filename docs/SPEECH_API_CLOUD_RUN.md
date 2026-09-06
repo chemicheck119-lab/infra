@@ -43,7 +43,8 @@ image 크기와 누적 개발비를 확인하고 총 70,000원 상한을 넘을 
 
 ## 실행 Gate
 
-1. 새 API key를 권한 0600의 로컬 파일에 생성합니다. 값을 shell 인자나 Git에 남기지 않습니다.
+1. 새 API key를 권한 0600의 로컬 파일에 생성합니다. 줄바꿈·공백 없는 단일 ASCII 문자열만
+   허용하며 값을 shell 인자나 Git에 남기지 않습니다.
 2. identity와 Secret을 최초 한 번 구성합니다.
 3. 현재 `speech-service/main`의 정확한 40자 commit으로 image를 build합니다.
 4. build 결과의 digest URI만 배포합니다.

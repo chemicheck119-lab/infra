@@ -67,6 +67,7 @@ grep -q -- '--build-arg=EMBED_WHISPER_MODEL=true' "${INFRA_DIRECTORY}/config/clo
 grep -q 'currently advertised main commit' "${SPEECH_API_BUILD}"
 grep -q 'refusing to overwrite an existing immutable commit tag' "${SPEECH_API_BUILD}"
 grep -q 'refusing to replace or rotate an existing Speech API secret' "${SPEECH_API_SETUP}"
+grep -q 'single-line printable ASCII without whitespace' "${SPEECH_API_SETUP}"
 grep -q -- '--concurrency=1' "${SPEECH_API_DEPLOY}"
 grep -q -- '--min-instances=0' "${SPEECH_API_DEPLOY}"
 grep -q -- '--max-instances=1' "${SPEECH_API_DEPLOY}"
