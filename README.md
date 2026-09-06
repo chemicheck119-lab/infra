@@ -97,8 +97,10 @@ transfer ceiling은 $0.25, 등록된 독립 실행 ceiling은 9,032원이고 이
 ## private Speech API 후보
 
 Speech API는 embedded `small` model의 immutable image digest를 개발용 preview에 배포했고,
-Backend runtime service account만 invoker로 허용했습니다. min instance 0, max instance 1,
-concurrency 1입니다. AIHub 광주 화재 신고 Validation WAV 30.16초 1건을 Backend BFF를 통해
+Backend runtime service account만 invoker로 허용했습니다. min instance 0, max instance 1을
+유지합니다. Cloud Run request concurrency는 4이고 애플리케이션 실제 추론 semaphore는 1이라,
+추가 요청은 모델을 동시에 실행하지 않고 1초 이내 busy 응답을 반환하도록 구성합니다.
+AIHub 광주 화재 신고 Validation WAV 30.16초 1건을 Backend BFF를 통해
 요청했을 때 HTTP 200, Speech 처리시간 4.5004초, RTF 0.1492를 확인했습니다. 원음 미보존,
 hotword 미사용, 사람 검토 필수, 물질 식별·CAS 확인·위험도 판단 미수행 경계도 응답 계약에서
 유지됐습니다.

@@ -32,7 +32,9 @@ IAM invoker는 Backend runtime service account로 제한합니다. 따라서 `in
 |---|---:|---|
 | CPU | 4 | 개발용 preview 적용값, 최적값 검증 전 |
 | memory | 8GiB | 개발용 preview 적용값, peak 측정 전 |
-| concurrency | 1 | application 추론 semaphore와 일치 |
+| Cloud Run request concurrency | 4 | 짧은 burst를 앱까지 전달하는 제한값 |
+| application 추론 semaphore | 1 | 실제 모델 동시 실행 방지 |
+| application queue wait | 1초 | 추가 요청을 빠른 429로 기권 |
 | min instances | 0 | 유휴 상시 compute 비용 방지 |
 | max instances | 1 | 과금·동시 추론 상한 |
 | request timeout | 60초 | Speech hard limit 60초 음성과는 별개인 초기 경계 |
@@ -41,6 +43,13 @@ IAM invoker는 Backend runtime service account로 제한합니다. 따라서 `in
 `min=0`은 요청이 없을 때 instance를 0으로 내릴 수 있다는 뜻이지 무료 보장이 아닙니다.
 image 저장비, Cloud Build, 실제 요청 compute는 별도 청구될 수 있습니다. 실제 build·deploy 전
 image 크기와 누적 개발비를 확인하고 총 70,000원 상한을 넘을 가능성이 있으면 중단합니다.
+
+Cloud Run concurrency를 1로 두면 추가 요청이 container 앞에서 직렬 대기해 application의
+1초 busy gate가 실행되지 않습니다. 2026-09-07 동시 2요청 smoke에서 두 번째 E2E가
+9.2474초로 늘어난 현상을 확인해 request concurrency를 4로 조정했습니다. 이는 실제 모델을
+4개 동시에 실행한다는 뜻이 아닙니다. application semaphore는 계속 1이며, 추가 요청은
+`TRANSCRIBER_BUSY` 429로 기권해야 합니다. 4개를 넘는 burst의 플랫폼 queue는 별도 부하
+평가가 필요합니다.
 
 ## 실행 Gate
 
