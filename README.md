@@ -59,7 +59,9 @@ Cloud Run Job은 자동 예약되지 않고 외부 요청을 받는 서비스도
 ## Whisper LoRA 1회성 T4 runner
 
 서울 리전에는 현재 standard T4 quota 1장이 있고 사용량은 0입니다. T4가 노출되는
-`asia-northeast3-b`에서 `n1-standard-4`·T4 1장·100GiB `pd-balanced` disk를 고정합니다.
+첫 요청에서 `asia-northeast3-b`의 재고 부족을 확인해, 다른 노출 zone인
+`asia-northeast3-c`에서 `n1-standard-4`·T4 1장·100GiB `pd-balanced` disk를 고정합니다.
+이는 자동 zone retry가 아니라 새 authorization을 사용하는 별도 1회 시도입니다.
 실행은 자동화나 일정 등록 없이 사람이 정확한 `speech-service` commit과 24시간 이내 비용
 견적을 전달할 때만 시작됩니다. 견적의 authorization은 commit·누적 개발비·1회 실행에
 결합되고, 같은 ID의 quote/claim 객체는 GCS에서 원자적 최초 생성만 허용합니다.
