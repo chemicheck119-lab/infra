@@ -110,8 +110,12 @@ request concurrency를 4로 바꾼 뒤에는 한 건만 추론하고 다른 한 
 `SPEECH_BUSY`·retryable로 반환해 빠른 backpressure를 확인했습니다. 4개 초과 burst는
 아직 검증 전입니다.
 
-이 값들은 제한된 연결·동시 2요청 smoke 결과입니다. 독립 cold start, memory peak,
-4개 초과 burst·timeout, 교차지역 정확도 또는 현장 무전 안전성을 검증한 결과가 아닙니다.
+instance 종료 로그 뒤 같은 30.16초 WAV를 보낸 scale-to-zero cold smoke의 E2E는
+14.4097초였습니다. warm-sequence E2E median 4.8307초보다 9.5790초 길었습니다. 이는
+단일 cold 관찰값이므로 tail latency나 제한 시간 내 성공 보장이 아닙니다.
+
+이 값들은 제한된 연결·동시 2요청·cold smoke 결과입니다. memory peak, 4개 초과
+burst·timeout, 교차지역 정확도 또는 현장 무전 안전성을 검증한 결과가 아닙니다.
 따라서 상태는
 **부분 구현 또는 개발용 데모**이며 상용 운영 경험으로 표현하지 않습니다.
 

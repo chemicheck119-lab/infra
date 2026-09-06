@@ -96,6 +96,8 @@ setup은 기존 Secret을 덮어쓰거나 회전하지 않습니다. build는 �
 | backpressure artifact SHA-256 | `1a969c7c32aa920021866fdf120626ae49c88ad8118ef55a955a53208beb22ea` | A/B 집계 보고서 무결성 |
 | runtime storage 권한 | project role 0, bucket binding 0, user key 0 | GCS 영속 경로 차단 |
 | storage audit artifact SHA-256 | `7ebacda7ea430063bba79f32e5993549465d0ff23b8609fada7e3d935ffe5c37` | 권한·코드 경계 집계 무결성 |
+| scale-to-zero cold | startup→ready 7.7734초, E2E 14.4097초 | 단일 cold 관찰값 |
+| cold artifact SHA-256 | `737436d1411a6bb1f7a9acaf757b397913cebd37bc3abd67fc7c6884e53a645f` | cold 집계 보고서 무결성 |
 
 요청 ID `REQ-BFF-SPEECH-SMOKE-20260907-002`의 Backend 로그에는 route, HTTP 상태,
 소요시간만 기록됐습니다. 이 1건으로 STT 정확도, 교차지역 일반화, 현장 무전 성능이나 실제
@@ -108,9 +110,10 @@ setup은 기존 Secret을 덮어쓰거나 회전하지 않습니다. build는 �
 - 제한 PCM WAV 1건의 Backend 연결·RTF 확인 — 완료
 - 동일 instance warm-sequence 3회 latency — 완료
 - Cloud Monitoring 분 단위 memory utilization mean 확인 — 완료, process peak는 미측정
-- 독립 cold start latency 측정
+- 독립 scale-to-zero cold start latency 1건 — 완료, 분포·tail은 미측정
 - 16MiB·60초·WAV 형식 경계와 동시 요청 `SPEECH_BUSY` 확인 — 완료
 - 원본 음성·전사문 비보존 — 로그·코드·migration·GCS runtime 권한 확인 완료
 - 실패 시 Backend Speech 환경변수가 없는 직전 revision으로 rollback
 
-남은 검증 전에는 “GCP에서 실제 음성 기능 운영”이라고 주장하지 않습니다.
+남은 4개 초과 burst·timeout fault·자원 축소 비교는 infra #27에서 추적합니다. 이 검증
+전에는 “GCP에서 실제 음성 기능 운영”이라고 주장하지 않습니다.
