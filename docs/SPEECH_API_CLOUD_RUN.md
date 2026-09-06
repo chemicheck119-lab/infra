@@ -3,8 +3,9 @@
 ## 사실 상태
 
 - build·identity·deploy·read-only audit 하네스: **구현 완료**
-- 실제 GCP service·IAM·Secret 적용: **설계 완료·구현 전**
-- cold/warm 추론·부하·Backend 연결: **설계 완료·구현 전**
+- 실제 GCP service·IAM·Secret 적용: **개발용 preview 구현 완료**
+- Backend 연결·제한 WAV 1건 추론: **부분 구현 또는 개발용 데모**
+- cold/warm 반복·부하·실패 경계: **설계 완료·구현 전**
 - 실제 Pad·현장 무전 효과: **검증되지 않은 가설**
 
 실제 service revision과 추론을 확인한 뒤에도 범위는 **부분 구현 또는 개발용 데모**입니다.
@@ -29,8 +30,8 @@ IAM invoker는 Backend runtime service account로 제한합니다. 따라서 `in
 
 | 설정 | 값 | 근거 상태 |
 |---|---:|---|
-| CPU | 4 | faster-whisper CPU int8 개발 시작점, 실측 전 |
-| memory | 8GiB | embedded small model 시작점, 실측 전 |
+| CPU | 4 | 개발용 preview 적용값, 최적값 검증 전 |
+| memory | 8GiB | 개발용 preview 적용값, peak 측정 전 |
 | concurrency | 1 | application 추론 semaphore와 일치 |
 | min instances | 0 | 유휴 상시 compute 비용 방지 |
 | max instances | 1 | 과금·동시 추론 상한 |
@@ -68,11 +69,30 @@ setup은 기존 Secret을 덮어쓰거나 회전하지 않습니다. build는 �
 않고, deploy는 immutable digest만 받습니다. audit 결과에는 Secret 값·전사문·음성이
 포함되지 않습니다.
 
-## 실제 배포 후 추가 검증
+## 2026-09-07 개발용 preview 증거
 
-- Backend 후보 revision에서 liveness·readiness 확인
-- 인증 없는 직접 호출 401/403, Backend 경유 인증 호출 성공
-- 제한 PCM WAV 1건의 실제 cold/warm latency·RTF·memory 측정
+| 항목 | 관찰값 | 주장 범위 |
+|---|---|---|
+| Speech revision | `chemicheck119-speech-api-preview-00002-tw2` | 배포 식별자 |
+| image digest | `sha256:d24fbab1019c8248b71c937e99a203c8d249075c01779e1523000509638cfa05` | 불변 image |
+| IAM audit | 11개 검사 통과 | 공개 invoker 없음, Backend runtime SA만 호출 |
+| audit artifact SHA-256 | `cc7f6db47ce1d27aa8a84eae7ecb697ae7d30134470eae019313d3ff579aa16c` | 비공개 집계 보고서 무결성 |
+| 실제 입력 | AIHub 광주 화재 신고 Validation WAV 30.16초 1건 | 승인 공개 데이터 기반 smoke |
+| Backend BFF 응답 | HTTP 200, `TRANSCRIBED`, 156자·13 segment | 연결성과 응답 계약 |
+| 추론 | 4.5004초, RTF 0.1492 | 단일 요청 관찰값 |
+| 안전 경계 | 원음 미보존, hotword 미사용, 사람 검토 필수 | 응답 계약 관찰값 |
+| 판단 경계 | 물질 식별·CAS 확인·위험도 판단 모두 미수행 | LLM 판단 제한 확인 |
+
+요청 ID `REQ-BFF-SPEECH-SMOKE-20260907-002`의 Backend 로그에는 route, HTTP 상태,
+소요시간만 기록됐습니다. 이 1건으로 STT 정확도, 교차지역 일반화, 현장 무전 성능이나 실제
+안전성을 주장하지 않습니다.
+
+## 추가 검증
+
+- Backend 후보 revision에서 liveness·readiness 확인 — 완료
+- 인증 없는 직접 호출 401/403, Backend 경유 인증 호출 성공 — 완료
+- 제한 PCM WAV 1건의 Backend 연결·RTF 확인 — 완료
+- cold/warm 반복 latency와 memory peak 측정
 - 16MiB·60초·WAV 형식 경계와 동시 요청 `SPEECH_BUSY` 확인
 - 원본 음성·전사문이 Cloud Logging·DB·GCS에 저장되지 않았는지 감사
 - 실패 시 Backend Speech 환경변수가 없는 직전 revision으로 rollback
