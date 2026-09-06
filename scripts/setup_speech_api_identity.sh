@@ -23,6 +23,13 @@ if (( KEY_SIZE < 32 || KEY_SIZE > 4096 )); then
   echo "key input must contain between 32 and 4096 bytes" >&2
   exit 1
 fi
+KEY_VALUE="$(<"${KEY_FILE}")"
+if (( ${#KEY_VALUE} != KEY_SIZE )) || \
+  [[ ! "${KEY_VALUE}" =~ ^[A-Za-z0-9._~-]+$ ]]; then
+  echo "key input must be single-line printable ASCII without whitespace" >&2
+  exit 1
+fi
+unset KEY_VALUE
 if gcloud secrets describe "${SPEECH_API_KEY_SECRET}" \
   --project="${PROJECT_ID}" >/dev/null 2>&1; then
   echo "refusing to replace or rotate an existing Speech API secret" >&2
