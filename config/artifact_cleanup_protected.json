@@ -1,0 +1,13 @@
+{
+  "schema_version": "chemicheck119-artifact-protection-v1",
+  "digests": [
+    {
+      "digest": "sha256:83f3a86f1b0221705bc156000ebe3fd3a1fa1305c41cd16e9208e393830a3708",
+      "reason": "광주 77건 CPU 기준선 평가 image"
+    },
+    {
+      "digest": "sha256:659909525856696f19c7e802dba5798866c3a12853a593d3baf42c405f143911",
+      "reason": "교차지역·모의 통신 왜곡 잠금 평가 image"
+    }
+  ]
+}
