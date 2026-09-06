@@ -49,7 +49,8 @@ Cloud Run concurrency를 1로 두면 추가 요청이 container 앞에서 직렬
 9.2474초로 늘어난 현상을 확인해 request concurrency를 4로 조정했습니다. 이는 실제 모델을
 4개 동시에 실행한다는 뜻이 아닙니다. application semaphore는 계속 1이며, 추가 요청은
 `TRANSCRIBER_BUSY` 429로 기권해야 합니다. 4개를 넘는 burst의 플랫폼 queue는 별도 부하
-평가가 필요합니다.
+평가가 필요합니다. 변경 후 동시 2요청에서 한 건은 정상 전사되고 다른 한 건은 1.3062초에
+Backend `SPEECH_BUSY`·retryable 응답으로 기권해 이 가설을 조건부로 채택했습니다.
 
 ## 실행 Gate
 
@@ -82,15 +83,19 @@ setup은 기존 Secret을 덮어쓰거나 회전하지 않습니다. build는 �
 
 | 항목 | 관찰값 | 주장 범위 |
 |---|---|---|
-| Speech revision | `chemicheck119-speech-api-preview-00002-tw2` | 배포 식별자 |
+| Speech revision | `chemicheck119-speech-api-preview-00003-n4f` | 배포 식별자 |
 | image digest | `sha256:d24fbab1019c8248b71c937e99a203c8d249075c01779e1523000509638cfa05` | 불변 image |
-| IAM audit | 11개 검사 통과 | 공개 invoker 없음, Backend runtime SA만 호출 |
-| audit artifact SHA-256 | `cc7f6db47ce1d27aa8a84eae7ecb697ae7d30134470eae019313d3ff579aa16c` | 비공개 집계 보고서 무결성 |
+| IAM audit v2 | 11개 검사 통과 | 공개 invoker 없음, Backend runtime SA만 호출 |
+| audit artifact SHA-256 | `2de2b7e0474e75bfe2dc4349504ea293a2f0f5981f176fd99c119fe7ee866e1c` | 비공개 집계 보고서 무결성 |
 | 실제 입력 | AIHub 광주 화재 신고 Validation WAV 30.16초 1건 | 승인 공개 데이터 기반 smoke |
 | Backend BFF 응답 | HTTP 200, `TRANSCRIBED`, 156자·13 segment | 연결성과 응답 계약 |
 | 추론 | 4.5004초, RTF 0.1492 | 단일 요청 관찰값 |
 | 안전 경계 | 원음 미보존, hotword 미사용, 사람 검토 필수 | 응답 계약 관찰값 |
 | 판단 경계 | 물질 식별·CAS 확인·위험도 판단 모두 미수행 | LLM 판단 제한 확인 |
+| 동시 2요청 | 200 1건 + 429 `SPEECH_BUSY` 1건 | 단일 추론·빠른 기권 |
+| backpressure artifact SHA-256 | `1a969c7c32aa920021866fdf120626ae49c88ad8118ef55a955a53208beb22ea` | A/B 집계 보고서 무결성 |
+| runtime storage 권한 | project role 0, bucket binding 0, user key 0 | GCS 영속 경로 차단 |
+| storage audit artifact SHA-256 | `7ebacda7ea430063bba79f32e5993549465d0ff23b8609fada7e3d935ffe5c37` | 권한·코드 경계 집계 무결성 |
 
 요청 ID `REQ-BFF-SPEECH-SMOKE-20260907-002`의 Backend 로그에는 route, HTTP 상태,
 소요시간만 기록됐습니다. 이 1건으로 STT 정확도, 교차지역 일반화, 현장 무전 성능이나 실제
@@ -101,9 +106,11 @@ setup은 기존 Secret을 덮어쓰거나 회전하지 않습니다. build는 �
 - Backend 후보 revision에서 liveness·readiness 확인 — 완료
 - 인증 없는 직접 호출 401/403, Backend 경유 인증 호출 성공 — 완료
 - 제한 PCM WAV 1건의 Backend 연결·RTF 확인 — 완료
-- cold/warm 반복 latency와 memory peak 측정
-- 16MiB·60초·WAV 형식 경계와 동시 요청 `SPEECH_BUSY` 확인
-- 원본 음성·전사문이 Cloud Logging·DB·GCS에 저장되지 않았는지 감사
+- 동일 instance warm-sequence 3회 latency — 완료
+- Cloud Monitoring 분 단위 memory utilization mean 확인 — 완료, process peak는 미측정
+- 독립 cold start latency 측정
+- 16MiB·60초·WAV 형식 경계와 동시 요청 `SPEECH_BUSY` 확인 — 완료
+- 원본 음성·전사문 비보존 — 로그·코드·migration·GCS runtime 권한 확인 완료
 - 실패 시 Backend Speech 환경변수가 없는 직전 revision으로 rollback
 
-이 검증 전에는 “GCP에서 실제 음성 기능 운영”이라고 주장하지 않습니다.
+남은 검증 전에는 “GCP에서 실제 음성 기능 운영”이라고 주장하지 않습니다.

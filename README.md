@@ -105,8 +105,14 @@ AIHub 광주 화재 신고 Validation WAV 30.16초 1건을 Backend BFF를 통해
 hotword 미사용, 사람 검토 필수, 물질 식별·CAS 확인·위험도 판단 미수행 경계도 응답 계약에서
 유지됐습니다.
 
-이 값은 단일 연결 smoke 결과입니다. 반복 cold/warm latency, memory peak, 과부하·timeout,
-교차지역 정확도 또는 현장 무전 안전성을 검증한 결과가 아닙니다. 따라서 상태는
+동시 2요청 A/B에서는 concurrency 1일 때 둘째 요청이 9.2474초까지 직렬 대기했습니다.
+request concurrency를 4로 바꾼 뒤에는 한 건만 추론하고 다른 한 건을 1.3062초에
+`SPEECH_BUSY`·retryable로 반환해 빠른 backpressure를 확인했습니다. 4개 초과 burst는
+아직 검증 전입니다.
+
+이 값들은 제한된 연결·동시 2요청 smoke 결과입니다. 독립 cold start, memory peak,
+4개 초과 burst·timeout, 교차지역 정확도 또는 현장 무전 안전성을 검증한 결과가 아닙니다.
+따라서 상태는
 **부분 구현 또는 개발용 데모**이며 상용 운영 경험으로 표현하지 않습니다.
 
 실행 순서와 IAM·Secret·비용 Gate는
