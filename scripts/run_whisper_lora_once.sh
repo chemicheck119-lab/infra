@@ -25,11 +25,20 @@ if [[ -L "${COST_QUOTE_PATH}" || ! -f "${COST_QUOTE_PATH}" ]]; then
   echo "cost quote must be a regular non-symlink file" >&2
   exit 1
 fi
-python3 "${SCRIPT_DIRECTORY}/validate_lora_cost_quote.py" "${COST_QUOTE_PATH}"
+REMOTE_MAIN_REVISION="$(git ls-remote "${SPEECH_REPOSITORY_URL}" refs/heads/main | awk '{print $1}')"
+if [[ "${REMOTE_MAIN_REVISION}" != "${SPEECH_REVISION}" ]]; then
+  echo "speech revision must be the currently advertised main commit" >&2
+  exit 1
+fi
+python3 "${SCRIPT_DIRECTORY}/validate_lora_cost_quote.py" \
+  "${COST_QUOTE_PATH}" "${SPEECH_REVISION}"
+AUTHORIZATION_ID="$(python3 "${SCRIPT_DIRECTORY}/validate_lora_cost_quote.py" \
+  "${COST_QUOTE_PATH}" "${SPEECH_REVISION}" --authorization-id)"
 
 INSTANCE_NAME="chemicheck119-lora-$(date -u +%Y%m%d-%H%M%S)"
-RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-${SPEECH_REVISION:0:12}"
-COST_QUOTE_GCS_URI="${LORA_OUTPUT_GCS_PREFIX}/inputs/${RUN_ID}.cost-quote.json"
+RUN_ID="${AUTHORIZATION_ID}-${SPEECH_REVISION:0:12}"
+COST_QUOTE_GCS_URI="${LORA_OUTPUT_GCS_PREFIX}/inputs/${AUTHORIZATION_ID}.cost-quote.json"
+AUTHORIZATION_CLAIM_GCS_URI="${LORA_OUTPUT_GCS_PREFIX}/authorizations/${AUTHORIZATION_ID}.claimed.json"
 RUN_OUTPUT_GCS_PREFIX="${LORA_OUTPUT_GCS_PREFIX}/runs/${RUN_ID}"
 CREATED=false
 
@@ -71,7 +80,7 @@ gcloud compute instances create "${INSTANCE_NAME}" \
   --service-account="${ML_RUNNER_SERVICE_ACCOUNT}" \
   --scopes=https://www.googleapis.com/auth/devstorage.read_write \
   --shielded-secure-boot \
-  --metadata="enable-oslogin=TRUE,block-project-ssh-keys=TRUE,speech-revision=${SPEECH_REVISION},speech-repository-url=${SPEECH_REPOSITORY_URL},data-gcs-prefix=${LORA_DATA_GCS_PREFIX},cost-quote-gcs-uri=${COST_QUOTE_GCS_URI},output-gcs-prefix=${RUN_OUTPUT_GCS_PREFIX},train-timeout-seconds=${LORA_TRAIN_TIMEOUT_SECONDS}" \
+  --metadata="enable-oslogin=TRUE,block-project-ssh-keys=TRUE,speech-revision=${SPEECH_REVISION},speech-repository-url=${SPEECH_REPOSITORY_URL},authorization-id=${AUTHORIZATION_ID},authorization-claim-gcs-uri=${AUTHORIZATION_CLAIM_GCS_URI},data-gcs-prefix=${LORA_DATA_GCS_PREFIX},cost-quote-gcs-uri=${COST_QUOTE_GCS_URI},output-gcs-prefix=${RUN_OUTPUT_GCS_PREFIX},train-timeout-seconds=${LORA_TRAIN_TIMEOUT_SECONDS}" \
   --metadata-from-file="startup-script=${SCRIPT_DIRECTORY}/startup_whisper_lora.sh" \
   >/dev/null
 echo "bounded LoRA instance created: ${INSTANCE_NAME}"

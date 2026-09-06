@@ -61,7 +61,8 @@ Cloud Run Job은 자동 예약되지 않고 외부 요청을 받는 서비스도
 서울 리전에는 현재 standard T4 quota 1장이 있고 사용량은 0입니다. T4가 노출되는
 `asia-northeast3-b`에서 `n1-standard-4`·T4 1장·100GiB `pd-balanced` disk를 고정합니다.
 실행은 자동화나 일정 등록 없이 사람이 정확한 `speech-service` commit과 24시간 이내 비용
-견적을 전달할 때만 시작됩니다.
+견적을 전달할 때만 시작됩니다. 견적의 authorization은 commit·누적 개발비·1회 실행에
+결합되고, 같은 ID의 quote/claim 객체는 GCS에서 원자적 최초 생성만 허용합니다.
 
 ```bash
 scripts/run_whisper_lora_once.sh \
@@ -75,7 +76,8 @@ scripts/run_whisper_lora_once.sh \
 - 로컬 세션이 끊겨도 Compute Engine이 생성 후 3시간에 VM과 auto-delete boot disk를 삭제합니다.
 
 학습 process는 2시간 45분(9,900초)에 먼저 종료해 결과 업로드 시간을 15분 남기고, training
-retry는 0입니다. service account에는 비공개 bucket의 기존 객체 조회와 신규 객체 생성만
+retry는 0입니다. Python 내부 cleanup deadline은 9,600초로 더 먼저 실행됩니다. service
+account에는 비공개 bucket의 기존 객체 조회와 신규 객체 생성만
 허용하며 삭제·덮어쓰기는 허용하지 않습니다. 결과는 `trained_unvalidated` adapter와 집계
 보고서이며, 원본 음성·전사문·model weight를 Git에 저장하지 않습니다.
 

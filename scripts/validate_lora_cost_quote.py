@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import json
 import math
 from pathlib import Path
+import re
 import sys
 
 
@@ -37,7 +38,11 @@ def timestamp(value: object, name: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
-def validate(path: Path, now: datetime | None = None) -> dict[str, object]:
+def validate(
+    path: Path,
+    speech_revision: str,
+    now: datetime | None = None,
+) -> dict[str, object]:
     if path.is_symlink() or not path.is_file() or path.stat().st_size > 64 * 1024:
         raise ValueError("cost quote must be a bounded regular non-symlink file")
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -49,6 +54,23 @@ def validate(path: Path, now: datetime | None = None) -> dict[str, object]:
         or payload.get("currency") != "USD"
     ):
         raise ValueError("cost quote identity does not match")
+    authorization = payload.get("authorization")
+    if not isinstance(authorization, dict):
+        raise ValueError("cost authorization must be an object")
+    authorization_id = authorization.get("id")
+    cumulative_before = authorization.get("cumulative_development_cost_before_krw")
+    if (
+        not isinstance(authorization_id, str)
+        or re.fullmatch(r"[a-z0-9][a-z0-9-]{7,63}", authorization_id) is None
+        or re.fullmatch(r"[0-9a-f]{40}", speech_revision) is None
+        or authorization.get("speech_revision") != speech_revision
+        or authorization.get("authorized_run_count") != 1
+        or authorization.get("remote_claim_required") is not True
+        or not isinstance(cumulative_before, int)
+        or isinstance(cumulative_before, bool)
+        or cumulative_before < TRACKED_PRIOR_CEILING_KRW
+    ):
+        raise ValueError("cost authorization does not match the single-use run")
     generated = timestamp(payload.get("generated_at"), "generated_at")
     expires = timestamp(payload.get("expires_at"), "expires_at")
     observed_now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
@@ -99,21 +121,31 @@ def validate(path: Path, now: datetime | None = None) -> dict[str, object]:
         * FX_CEILING_KRW_PER_USD
         * (1 + CONTINGENCY_FRACTION)
     )
-    if TRACKED_PRIOR_CEILING_KRW + independent_ceiling > TOTAL_DEVELOPMENT_CAP_KRW:
+    independent_total = cumulative_before + independent_ceiling
+    if independent_total > TOTAL_DEVELOPMENT_CAP_KRW:
         raise ValueError("independent total ceiling exceeds the development cap")
     return {
         "status": "accepted",
+        "authorization_id": authorization_id,
         "quoted_total_krw_with_contingency": quoted_krw,
         "independent_experiment_ceiling_krw": independent_ceiling,
-        "independent_total_ceiling_krw": TRACKED_PRIOR_CEILING_KRW
-        + independent_ceiling,
+        "independent_total_ceiling_krw": independent_total,
     }
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
-        raise SystemExit("usage: validate_lora_cost_quote.py COST_QUOTE_JSON")
-    print(json.dumps(validate(Path(sys.argv[1])), ensure_ascii=False))
+    if len(sys.argv) not in (3, 4):
+        raise SystemExit(
+            "usage: validate_lora_cost_quote.py COST_QUOTE_JSON SPEECH_COMMIT_SHA "
+            "[--authorization-id]"
+        )
+    result = validate(Path(sys.argv[1]), sys.argv[2])
+    if len(sys.argv) == 4:
+        if sys.argv[3] != "--authorization-id":
+            raise SystemExit("unsupported output option")
+        print(result["authorization_id"])
+    else:
+        print(json.dumps(result, ensure_ascii=False))
     return 0
 
 

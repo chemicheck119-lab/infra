@@ -17,6 +17,8 @@ trap shutdown_instance EXIT
 
 SPEECH_REVISION="$(metadata_value speech-revision)"
 SPEECH_REPOSITORY_URL="$(metadata_value speech-repository-url)"
+AUTHORIZATION_ID="$(metadata_value authorization-id)"
+AUTHORIZATION_CLAIM_GCS_URI="$(metadata_value authorization-claim-gcs-uri)"
 DATA_GCS_PREFIX="$(metadata_value data-gcs-prefix)"
 COST_QUOTE_GCS_URI="$(metadata_value cost-quote-gcs-uri)"
 OUTPUT_GCS_PREFIX="$(metadata_value output-gcs-prefix)"
@@ -28,6 +30,15 @@ if [[ ! "${SPEECH_REVISION}" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if [[ "${SPEECH_REPOSITORY_URL}" != "https://github.com/chemicheck119-lab/speech-service.git" ]]; then
   echo "speech repository URL does not match the registered public source" >&2
+  exit 1
+fi
+if [[ ! "${AUTHORIZATION_ID}" =~ ^[a-z0-9][a-z0-9-]{7,63}$ ]]; then
+  echo "authorization ID is invalid" >&2
+  exit 1
+fi
+EXPECTED_CLAIM_GCS_URI="${OUTPUT_GCS_PREFIX%%/runs/*}/authorizations/${AUTHORIZATION_ID}.claimed.json"
+if [[ "${AUTHORIZATION_CLAIM_GCS_URI}" != "${EXPECTED_CLAIM_GCS_URI}" ]]; then
+  echo "authorization claim URI does not match its ID" >&2
   exit 1
 fi
 if [[ ! "${DATA_GCS_PREFIX}" =~ ^gs://[^/]+/.+[^/]$ ]]; then
@@ -58,9 +69,19 @@ WORK_ROOT=/var/lib/chemicheck119-lora
 SOURCE_ROOT="${WORK_ROOT}/speech-service"
 ARTIFACT_ROOT="${WORK_ROOT}/data-artifacts"
 COST_QUOTE_PATH="${WORK_ROOT}/current-cost-quote.json"
+AUTHORIZATION_CLAIM_PATH="${WORK_ROOT}/authorization-claim.json"
 OUTPUT_ROOT="${WORK_ROOT}/result"
 
 install -d -m 0700 "${WORK_ROOT}" "${ARTIFACT_ROOT}"
+gcloud storage cp "${COST_QUOTE_GCS_URI}" "${COST_QUOTE_PATH}" >/dev/null
+chmod 0600 "${COST_QUOTE_PATH}"
+python3 -c 'import datetime,hashlib,json,sys; quote=open(sys.argv[1],"rb").read(); payload={"schema_version":"1.0.0","protocol_id":"whisper-small-lora-authorization-claim-v1","authorization_id":sys.argv[3],"speech_revision":sys.argv[4],"cost_quote_sha256":hashlib.sha256(quote).hexdigest(),"claimed_at":datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00","Z"),"remote_claim_created":True,"remote_object_uri":sys.argv[5]}; open(sys.argv[2],"x",encoding="utf-8").write(json.dumps(payload,ensure_ascii=False)+"\n")' \
+  "${COST_QUOTE_PATH}" "${AUTHORIZATION_CLAIM_PATH}" "${AUTHORIZATION_ID}" \
+  "${SPEECH_REVISION}" "${AUTHORIZATION_CLAIM_GCS_URI}"
+chmod 0600 "${AUTHORIZATION_CLAIM_PATH}"
+gcloud storage cp --if-generation-match=0 \
+  "${AUTHORIZATION_CLAIM_PATH}" "${AUTHORIZATION_CLAIM_GCS_URI}" >/dev/null
+
 git clone --filter=blob:none --no-checkout \
   "${SPEECH_REPOSITORY_URL}" "${SOURCE_ROOT}"
 git -C "${SOURCE_ROOT}" fetch --depth=1 origin "${SPEECH_REVISION}"
@@ -95,8 +116,6 @@ for filename in "${ARTIFACT_FILES[@]}"; do
     "${ARTIFACT_ROOT}/${filename}" >/dev/null
   chmod 0600 "${ARTIFACT_ROOT}/${filename}"
 done
-gcloud storage cp "${COST_QUOTE_GCS_URI}" "${COST_QUOTE_PATH}" >/dev/null
-chmod 0600 "${COST_QUOTE_PATH}"
 
 timeout --signal=TERM --kill-after=60s "${TRAIN_TIMEOUT_SECONDS}" \
   env PYTHONPATH="${SOURCE_ROOT}/src" USE_TF=0 \
@@ -105,8 +124,10 @@ timeout --signal=TERM --kill-after=60s "${TRAIN_TIMEOUT_SECONDS}" \
   --experiment-config "${SOURCE_ROOT}/config/whisper_lora_experiment_v1.json" \
   --artifact-root "${ARTIFACT_ROOT}" \
   --cost-quote "${COST_QUOTE_PATH}" \
+  --authorization-claim "${AUTHORIZATION_CLAIM_PATH}" \
   --output-dir "${OUTPUT_ROOT}" \
-  --confirm-bounded-experiment RUN_BOUNDED_LORA_ONCE
+  --confirm-bounded-experiment RUN_BOUNDED_LORA_ONCE \
+  --runner-revision "${SPEECH_REVISION}"
 
 gcloud storage cp --recursive --if-generation-match=0 \
   "${OUTPUT_ROOT}" "${OUTPUT_GCS_PREFIX}/" >/dev/null
