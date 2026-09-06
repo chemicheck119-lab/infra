@@ -18,7 +18,7 @@
 | CPU Cloud Run 평가 Job | 개발용 배포·고정 77건 평가 완료 |
 | Cloud Run GPU 평가 | L4 할당량 요청 거절·구현 전 |
 | Compute Engine L4 LoRA runner | 구현 완료·실행 전 |
-| private Speech API Cloud Run | 배포·IAM 스크립트 구현, 실제 적용 전 |
+| private Speech API Cloud Run | 개발용 preview 배포·IAM·Backend 연결 smoke 완료 |
 | GCP 결제 예산 알림 | 월 50,000원·실제 지출 100% 단일 알림 구성 완료 |
 | 고가용성 상용 운영 | 설계·검증 전 |
 
@@ -96,10 +96,16 @@ transfer ceiling은 $0.25, 등록된 독립 실행 ceiling은 9,032원이고 이
 
 ## private Speech API 후보
 
-Speech API는 embedded `small` model의 immutable image digest만 배포하고, Backend runtime
-service account만 invoker로 허용하도록 구성합니다. min instance 0, max instance 1,
-concurrency 1로 시작하며 실제 cold/warm 추론과 memory 측정 전에는 자원값을 확정 성능으로
-주장하지 않습니다. 현재는 스크립트 구현 단계이고 GCP service는 아직 만들지 않았습니다.
+Speech API는 embedded `small` model의 immutable image digest를 개발용 preview에 배포했고,
+Backend runtime service account만 invoker로 허용했습니다. min instance 0, max instance 1,
+concurrency 1입니다. AIHub 광주 화재 신고 Validation WAV 30.16초 1건을 Backend BFF를 통해
+요청했을 때 HTTP 200, Speech 처리시간 4.5004초, RTF 0.1492를 확인했습니다. 원음 미보존,
+hotword 미사용, 사람 검토 필수, 물질 식별·CAS 확인·위험도 판단 미수행 경계도 응답 계약에서
+유지됐습니다.
+
+이 값은 단일 연결 smoke 결과입니다. 반복 cold/warm latency, memory peak, 과부하·timeout,
+교차지역 정확도 또는 현장 무전 안전성을 검증한 결과가 아닙니다. 따라서 상태는
+**부분 구현 또는 개발용 데모**이며 상용 운영 경험으로 표현하지 않습니다.
 
 실행 순서와 IAM·Secret·비용 Gate는
 [Speech API private Cloud Run 배포](docs/SPEECH_API_CLOUD_RUN.md)를 따릅니다.
