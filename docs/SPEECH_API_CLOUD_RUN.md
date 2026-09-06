@@ -106,6 +106,7 @@ setup은 기존 Secret을 덮어쓰거나 회전하지 않습니다. build는 �
 | Backend backpressure revision | `chemicheck119-be-staging-rc17bd1f1` | 인스턴스당 전사 1건 fail-fast Gate |
 | 동시 5요청 | 200 1건 + 429 `SPEECH_BUSY` 4건, Speech 호출 1건 | 단일 Backend 인스턴스의 bounded burst |
 | Backend backpressure artifact SHA-256 | `73cdcf127709a357944e0eb130ae06ca6e6afe3433feceb1688f970de7971e1d` | 비공개 집계 보고서 무결성 |
+| Backend timeout 계약 | 100ms client timeout·500ms mock header 지연, upstream 호출 1건, BFF 504 | 축소된 로컬 mock의 분류·무재시도 계약 |
 | runtime storage 권한 | project role 0, bucket binding 0, user key 0 | GCS 영속 경로 차단 |
 | storage audit artifact SHA-256 | `7ebacda7ea430063bba79f32e5993549465d0ff23b8609fada7e3d935ffe5c37` | 권한·코드 경계 집계 무결성 |
 | scale-to-zero cold | startup→ready 7.7734초, E2E 14.4097초 | 단일 cold 관찰값 |
@@ -125,8 +126,11 @@ setup은 기존 Secret을 덮어쓰거나 회전하지 않습니다. build는 �
 - 독립 scale-to-zero cold start latency 1건 — 완료, 분포·tail은 미측정
 - 16MiB·60초·WAV 형식 경계와 동시 요청 `SPEECH_BUSY` 확인 — 완료
 - 단일 Backend 인스턴스의 동시 5요청 fail-fast와 Speech 호출 1건 확인 — 완료
+- 축소 timeout mock의 `SPEECH_TIMEOUT`·BFF 504·자동 재시도 0건 확인 — 완료,
+  실제 Cloud Run 45초 timeout은 미측정
 - 원본 음성·전사문 비보존 — 로그·코드·migration·GCS runtime 권한 확인 완료
 - 실패 시 Backend Speech 환경변수가 없는 직전 revision으로 rollback
 
-남은 timeout fault·더 큰 부하·다중 인스턴스 전역 제한·자원 축소 비교는 infra #27에서
-추적합니다. 이 검증 전에는 “GCP에서 실제 음성 기능 운영”이라고 주장하지 않습니다.
+남은 실제 Cloud Run timeout fault·더 큰 부하·다중 인스턴스 전역 제한·자원 축소 비교는
+infra #27에서 추적합니다. 이 검증 전에는 “GCP에서 실제 음성 기능 운영”이라고 주장하지
+않습니다.
