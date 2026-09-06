@@ -61,7 +61,8 @@ Cloud Run Job은 자동 예약되지 않고 외부 요청을 받는 서비스도
 서울 리전에는 standard T4 quota 1장이 있고 사용량은 0이지만, T4가 노출되는
 `asia-northeast3-b/c` 요청이 모두 instance 생성 전 재고 부족으로 거부됐습니다.
 동일한 `n1-standard-4`·T4 1장·100GiB `pd-balanced` disk 조건을 보존하고,
-quota 1장·사용량 0과 T4 노출을 확인한 도쿄 `asia-northeast1-a`에서 실행합니다.
+quota 1장·사용량 0과 T4 노출을 확인한 도쿄에서도 `asia-northeast1-a`가 같은 이유로
+거부되어, 같은 리전의 마지막 확인 후보 `asia-northeast1-c`에서 실행합니다.
 이는 자동 zone retry가 아니라 새 authorization을 사용하는 별도 1회 시도입니다. 데이터
 bucket은 서울에 유지하므로 아시아 리전 간 artifact 전송비를 실행 전 견적에 포함합니다.
 실행은 자동화나 일정 등록 없이 사람이 정확한 `speech-service` commit과 24시간 이내 비용
