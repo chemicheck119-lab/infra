@@ -16,7 +16,8 @@
 | 저장소 골격 | 구현 완료 |
 | ML 비공개 저장소·실행 스크립트 | 구현 완료·GCP 적용 완료 |
 | CPU Cloud Run 평가 Job | 개발용 배포·고정 77건 평가 완료 |
-| GPU 평가·파인튜닝 | L4 할당량 요청 거절·구현 전 |
+| Cloud Run GPU 평가 | L4 할당량 요청 거절·구현 전 |
+| Compute Engine T4 LoRA runner | 구현 완료·실행 전 |
 | GCP 결제 예산 알림 | 현재 사용자 권한 부족으로 미구성 |
 | 고가용성 상용 운영 | 설계·검증 전 |
 
@@ -54,6 +55,34 @@ Cloud Run Job은 자동 예약되지 않고 외부 요청을 받는 서비스도
 - 실행 형태: 수동 단일 task, 병렬도 1, 재시도 0, 제한 시간 2시간
 
 이는 GCP에서 개발용 평가 Job을 실행한 증거이며 상용 서비스 운영 실적이 아닙니다.
+
+## Whisper LoRA 1회성 T4 runner
+
+서울 리전에는 현재 standard T4 quota 1장이 있고 사용량은 0입니다. T4가 노출되는
+`asia-northeast3-b`에서 `n1-standard-4`·T4 1장·100GiB `pd-balanced` disk를 고정합니다.
+실행은 자동화나 일정 등록 없이 사람이 정확한 `speech-service` commit과 24시간 이내 비용
+견적을 전달할 때만 시작됩니다.
+
+```bash
+scripts/run_whisper_lora_once.sh \
+  SPEECH_SERVICE_MERGE_COMMIT_SHA \
+  /secure/current-cost-quote.json
+```
+
+두 가지 독립 종료 장치가 있습니다.
+
+- 로컬 runner는 VM이 멈추면 정확한 instance를 즉시 삭제합니다.
+- 로컬 세션이 끊겨도 Compute Engine이 생성 후 3시간에 VM과 auto-delete boot disk를 삭제합니다.
+
+학습 process는 2시간 45분(9,900초)에 먼저 종료해 결과 업로드 시간을 15분 남기고, training
+retry는 0입니다. service account에는 비공개 bucket의 기존 객체 조회와 신규 객체 생성만
+허용하며 삭제·덮어쓰기는 허용하지 않습니다. 결과는 `trained_unvalidated` adapter와 집계
+보고서이며, 원본 음성·전사문·model weight를 Git에 저장하지 않습니다.
+
+현재 공식 on-demand 가격표와 USD/KRW 1,344.547원으로 보수적으로 계산한 3시간 견적은
+25% contingency 포함 약 2,813원입니다. 등록된 독립 ceiling은 8,500원이고 이전 개발비
+ceiling을 더한 전체 ceiling은 58,500원입니다. 이 값은 실행 전 견적이지 실제 청구액이나
+성능 성과가 아닙니다.
 
 ## 비용 경계
 
