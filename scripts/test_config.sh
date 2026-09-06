@@ -40,5 +40,6 @@ grep -q -- '--if-generation-match=0' "${LORA_RUNNER}"
 python3 -m py_compile "${SCRIPT_DIRECTORY}/validate_lora_cost_quote.py"
 grep -q '^LORA_MAX_RUN_SECONDS=10800$' "${INFRA_DIRECTORY}/config/ml.env"
 grep -q '^LORA_TRAIN_TIMEOUT_SECONDS=9900$' "${INFRA_DIRECTORY}/config/ml.env"
+grep -q '^LORA_ZONE=asia-northeast3-c$' "${INFRA_DIRECTORY}/config/ml.env"
 
 echo "Infrastructure configuration checks passed."
