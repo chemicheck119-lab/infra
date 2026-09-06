@@ -33,6 +33,8 @@ gcloud secrets versions describe latest \
 
 # ingress=all은 VPC connector가 없는 현재 Backend가 run.app URL로 호출하기 위한 경계다.
 # 공개 접근은 IAM에서 별도로 차단하고 Backend runtime service account만 invoker로 둔다.
+# request concurrency는 짧은 burst를 앱의 1초 queue gate까지 전달한다. 실제 모델 추론은
+# speech-service 내부 semaphore 1로 계속 제한된다.
 gcloud run deploy "${SPEECH_API_SERVICE_NAME}" \
   --project="${PROJECT_ID}" \
   --region="${REGION}" \
@@ -42,7 +44,7 @@ gcloud run deploy "${SPEECH_API_SERVICE_NAME}" \
   --port=8080 \
   --cpu=4 \
   --memory=8Gi \
-  --concurrency=1 \
+  --concurrency="${SPEECH_API_CONTAINER_CONCURRENCY}" \
   --min-instances=0 \
   --max-instances=1 \
   --timeout=60s \

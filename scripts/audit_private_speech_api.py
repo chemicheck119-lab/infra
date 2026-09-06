@@ -11,8 +11,9 @@ import sys
 from typing import Any
 
 
-SCHEMA_VERSION = "chemicheck119-private-speech-cloud-run-audit-v1"
+SCHEMA_VERSION = "chemicheck119-private-speech-cloud-run-audit-v2"
 MAX_INPUT_BYTES = 1024 * 1024
+EXPECTED_CONTAINER_CONCURRENCY = 4
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -58,7 +59,8 @@ def build_report(
         "immutable_image_digest": "@sha256:" in image,
         "runtime_service_account": spec.get("serviceAccountName")
         == runtime_service_account,
-        "concurrency_one": spec.get("containerConcurrency") == 1,
+        "bounded_request_concurrency": spec.get("containerConcurrency")
+        == EXPECTED_CONTAINER_CONCURRENCY,
         "max_instance_one": annotations.get("autoscaling.knative.dev/maxScale") == "1",
         "min_instance_zero": annotations.get(
             "autoscaling.knative.dev/minScale", "0"
@@ -102,7 +104,7 @@ def self_test() -> None:
                 },
                 "spec": {
                     "serviceAccountName": runtime,
-                    "containerConcurrency": 1,
+                    "containerConcurrency": EXPECTED_CONTAINER_CONCURRENCY,
                     "containers": [
                         {
                             "image": "region.pkg.dev/project/repo/speech@sha256:"
