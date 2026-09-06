@@ -18,6 +18,7 @@
 | CPU Cloud Run 평가 Job | 개발용 배포·고정 77건 평가 완료 |
 | Cloud Run GPU 평가 | L4 할당량 요청 거절·구현 전 |
 | Compute Engine L4 LoRA runner | 구현 완료·실행 전 |
+| private Speech API Cloud Run | 배포·IAM 스크립트 구현, 실제 적용 전 |
 | GCP 결제 예산 알림 | 월 50,000원·실제 지출 100% 단일 알림 구성 완료 |
 | 고가용성 상용 운영 | 설계·검증 전 |
 
@@ -92,6 +93,16 @@ account에는 비공개 bucket의 기존 객체 조회와 신규 객체 생성�
 transfer ceiling은 $0.25, 등록된 독립 실행 ceiling은 9,032원이고 이전 개발비 ceiling을 더한
 전체 ceiling은 59,032원입니다. 이 값은 실행 전 견적이지 실제 청구액이나 성능 성과가
 아닙니다.
+
+## private Speech API 후보
+
+Speech API는 embedded `small` model의 immutable image digest만 배포하고, Backend runtime
+service account만 invoker로 허용하도록 구성합니다. min instance 0, max instance 1,
+concurrency 1로 시작하며 실제 cold/warm 추론과 memory 측정 전에는 자원값을 확정 성능으로
+주장하지 않습니다. 현재는 스크립트 구현 단계이고 GCP service는 아직 만들지 않았습니다.
+
+실행 순서와 IAM·Secret·비용 Gate는
+[Speech API private Cloud Run 배포](docs/SPEECH_API_CLOUD_RUN.md)를 따릅니다.
 
 ## 비용 경계
 
