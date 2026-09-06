@@ -45,7 +45,9 @@ grep -q -- '--runner-revision' "${LORA_STARTUP}"
 grep -q -- '--if-generation-match=0' "${LORA_RUNNER}"
 python3 -m py_compile "${SCRIPT_DIRECTORY}/validate_lora_cost_quote.py"
 python3 -m py_compile "${SCRIPT_DIRECTORY}/audit_artifact_cleanup.py"
+python3 -m py_compile "${SCRIPT_DIRECTORY}/audit_private_speech_api.py"
 python3 "${SCRIPT_DIRECTORY}/audit_artifact_cleanup.py" --self-test
+python3 "${SCRIPT_DIRECTORY}/audit_private_speech_api.py" --self-test
 if grep -Eq '"(delete|update|set-cleanup-policies|remove-tags)"' \
   "${SCRIPT_DIRECTORY}/audit_artifact_cleanup.py"; then
   echo "artifact cleanup auditor must remain read-only" >&2
@@ -55,5 +57,23 @@ grep -q '^LORA_MAX_RUN_SECONDS=10800$' "${INFRA_DIRECTORY}/config/ml.env"
 grep -q '^LORA_TRAIN_TIMEOUT_SECONDS=9900$' "${INFRA_DIRECTORY}/config/ml.env"
 grep -q '^LORA_REGION=asia-northeast3$' "${INFRA_DIRECTORY}/config/ml.env"
 grep -q '^LORA_ZONE=asia-northeast3-a$' "${INFRA_DIRECTORY}/config/ml.env"
+
+SPEECH_API_BUILD="${SCRIPT_DIRECTORY}/build_speech_api_image.sh"
+SPEECH_API_SETUP="${SCRIPT_DIRECTORY}/setup_speech_api_identity.sh"
+SPEECH_API_DEPLOY="${SCRIPT_DIRECTORY}/deploy_private_speech_api.sh"
+SPEECH_API_AUDIT="${SCRIPT_DIRECTORY}/audit_private_speech_api.py"
+grep -q -- '--file=Dockerfile.api' "${INFRA_DIRECTORY}/config/cloudbuild-speech-api.yaml"
+grep -q -- '--build-arg=EMBED_WHISPER_MODEL=true' "${INFRA_DIRECTORY}/config/cloudbuild-speech-api.yaml"
+grep -q 'currently advertised main commit' "${SPEECH_API_BUILD}"
+grep -q 'refusing to overwrite an existing immutable commit tag' "${SPEECH_API_BUILD}"
+grep -q 'refusing to replace or rotate an existing Speech API secret' "${SPEECH_API_SETUP}"
+grep -q -- '--concurrency=1' "${SPEECH_API_DEPLOY}"
+grep -q -- '--min-instances=0' "${SPEECH_API_DEPLOY}"
+grep -q -- '--max-instances=1' "${SPEECH_API_DEPLOY}"
+grep -q -- '--no-allow-unauthenticated' "${SPEECH_API_DEPLOY}"
+grep -q 'CHEMICHECK119_SPEECH_LOCAL_FILES_ONLY=true' "${SPEECH_API_DEPLOY}"
+grep -q 'CHEMICHECK119_SPEECH_ALLOW_ANONYMOUS=false' "${SPEECH_API_DEPLOY}"
+grep -q 'invokers must contain only the Backend runtime service account' "${SPEECH_API_DEPLOY}"
+grep -q '실제 WAV' "${SPEECH_API_AUDIT}"
 
 echo "Infrastructure configuration checks passed."
