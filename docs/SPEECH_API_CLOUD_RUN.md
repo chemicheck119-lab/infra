@@ -52,6 +52,15 @@ Cloud Run concurrency를 1로 두면 추가 요청이 container 앞에서 직렬
 평가가 필요합니다. 변경 후 동시 2요청에서 한 건은 정상 전사되고 다른 한 건은 1.3062초에
 Backend `SPEECH_BUSY`·retryable 응답으로 기권해 이 가설을 조건부로 채택했습니다.
 
+동시 5요청 관찰에서는 Cloud Run 플랫폼이 capacity 초과 요청에 반환한 비JSON 429를 기존
+Backend가 422 계약 오류로 잘못 변환하고, 일부 요청은 직렬 대기하는 결함이 추가로
+드러났습니다. Backend
+`c17bd1f`부터 인스턴스당 전사 1건만 Speech API로 전달하고 나머지는 즉시
+`SPEECH_BUSY`로 기권합니다. 수정 후 현재 `max instances=1`인 staging에서 동시 5요청은
+200 1건과 429 4건이었고 실제 Speech 호출도 1건이었습니다. 이는 현재 단일 Backend
+인스턴스의 bounded burst 근거이지, 다중 인스턴스 전역 제한이나 대규모 용량 근거가
+아닙니다.
+
 ## 실행 Gate
 
 1. 새 API key를 권한 0600의 로컬 파일에 생성합니다. 줄바꿈·공백 없는 단일 ASCII 문자열만
@@ -94,6 +103,9 @@ setup은 기존 Secret을 덮어쓰거나 회전하지 않습니다. build는 �
 | 판단 경계 | 물질 식별·CAS 확인·위험도 판단 모두 미수행 | LLM 판단 제한 확인 |
 | 동시 2요청 | 200 1건 + 429 `SPEECH_BUSY` 1건 | 단일 추론·빠른 기권 |
 | backpressure artifact SHA-256 | `1a969c7c32aa920021866fdf120626ae49c88ad8118ef55a955a53208beb22ea` | A/B 집계 보고서 무결성 |
+| Backend backpressure revision | `chemicheck119-be-staging-rc17bd1f1` | 인스턴스당 전사 1건 fail-fast Gate |
+| 동시 5요청 | 200 1건 + 429 `SPEECH_BUSY` 4건, Speech 호출 1건 | 단일 Backend 인스턴스의 bounded burst |
+| Backend backpressure artifact SHA-256 | `73cdcf127709a357944e0eb130ae06ca6e6afe3433feceb1688f970de7971e1d` | 비공개 집계 보고서 무결성 |
 | runtime storage 권한 | project role 0, bucket binding 0, user key 0 | GCS 영속 경로 차단 |
 | storage audit artifact SHA-256 | `7ebacda7ea430063bba79f32e5993549465d0ff23b8609fada7e3d935ffe5c37` | 권한·코드 경계 집계 무결성 |
 | scale-to-zero cold | startup→ready 7.7734초, E2E 14.4097초 | 단일 cold 관찰값 |
@@ -112,8 +124,9 @@ setup은 기존 Secret을 덮어쓰거나 회전하지 않습니다. build는 �
 - Cloud Monitoring 분 단위 memory utilization mean 확인 — 완료, process peak는 미측정
 - 독립 scale-to-zero cold start latency 1건 — 완료, 분포·tail은 미측정
 - 16MiB·60초·WAV 형식 경계와 동시 요청 `SPEECH_BUSY` 확인 — 완료
+- 단일 Backend 인스턴스의 동시 5요청 fail-fast와 Speech 호출 1건 확인 — 완료
 - 원본 음성·전사문 비보존 — 로그·코드·migration·GCS runtime 권한 확인 완료
 - 실패 시 Backend Speech 환경변수가 없는 직전 revision으로 rollback
 
-남은 4개 초과 burst·timeout fault·자원 축소 비교는 infra #27에서 추적합니다. 이 검증
-전에는 “GCP에서 실제 음성 기능 운영”이라고 주장하지 않습니다.
+남은 timeout fault·더 큰 부하·다중 인스턴스 전역 제한·자원 축소 비교는 infra #27에서
+추적합니다. 이 검증 전에는 “GCP에서 실제 음성 기능 운영”이라고 주장하지 않습니다.
