@@ -16,6 +16,7 @@ TOTAL_DEVELOPMENT_CAP_KRW = 70_000
 TRACKED_PRIOR_CEILING_KRW = 50_000
 COMPUTE_CEILING_USD_PER_HOUR = 1.0
 BOOT_DISK_CEILING_USD = 1.0
+NETWORK_TRANSFER_CEILING_USD = 0.25
 FX_CEILING_KRW_PER_USD = 1_700
 CONTINGENCY_FRACTION = 0.25
 
@@ -81,7 +82,7 @@ def validate(
 
     resource = payload.get("resource")
     expected_resource = {
-        "gcp_region": "asia-northeast3",
+        "gcp_region": "asia-northeast1",
         "machine_type": "n1-standard-4",
         "gpu_type": "nvidia-tesla-t4",
         "gpu_count": 1,
@@ -106,18 +107,29 @@ def validate(
         * 3
         / number(pricing.get("month_hours"), "month hours")
     )
+    network_transfer = number(
+        pricing.get("network_transfer_usd"), "network transfer price"
+    )
     fx = number(payload.get("fx_krw_per_usd"), "FX rate")
     quoted_krw = math.ceil(
-        (compute_hour * 3 + boot_total) * fx * (1 + CONTINGENCY_FRACTION)
+        (compute_hour * 3 + boot_total + network_transfer)
+        * fx
+        * (1 + CONTINGENCY_FRACTION)
     )
     if compute_hour > COMPUTE_CEILING_USD_PER_HOUR:
         raise ValueError("compute quote exceeds the registered ceiling")
     if boot_total > BOOT_DISK_CEILING_USD:
         raise ValueError("disk quote exceeds the registered ceiling")
+    if network_transfer > NETWORK_TRANSFER_CEILING_USD:
+        raise ValueError("network transfer quote exceeds the registered ceiling")
     if fx > FX_CEILING_KRW_PER_USD or quoted_krw > EXPERIMENT_HARD_CAP_KRW:
         raise ValueError("quote exceeds the registered KRW ceiling")
     independent_ceiling = math.ceil(
-        (COMPUTE_CEILING_USD_PER_HOUR * 3 + BOOT_DISK_CEILING_USD)
+        (
+            COMPUTE_CEILING_USD_PER_HOUR * 3
+            + BOOT_DISK_CEILING_USD
+            + NETWORK_TRANSFER_CEILING_USD
+        )
         * FX_CEILING_KRW_PER_USD
         * (1 + CONTINGENCY_FRACTION)
     )

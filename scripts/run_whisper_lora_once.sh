@@ -10,6 +10,11 @@ require_command git
 require_command python3
 require_project
 
+if [[ "${LORA_ZONE}" != "${LORA_REGION}-"* ]]; then
+  echo "LoRA zone must belong to the registered region" >&2
+  exit 1
+fi
+
 if (( $# != 2 )); then
   echo "usage: $0 SPEECH_COMMIT_SHA COST_QUOTE_JSON" >&2
   exit 1
