@@ -36,6 +36,29 @@ EXPECTED_CONTAINER_CONCURRENCY = 4
 EXPECTED_MAX_INSTANCES = "1"
 ALLOWED_HTTP_STATUSES = frozenset({200, 429})
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
+RESOURCE_LOG_FIELDS = frozenset(
+    {
+        "event",
+        "request_id",
+        "processing_seconds",
+        "audio_seconds",
+        "resource_observation_available",
+        "resource_observation_error_type",
+        "cgroup_version",
+        "cgroup_memory_current_bytes",
+        "cgroup_memory_peak_bytes",
+        "cgroup_memory_limit_bytes",
+        "process_current_rss_bytes",
+        "process_max_rss_bytes",
+    }
+)
+RESOURCE_BYTE_FIELDS = (
+    "cgroup_memory_current_bytes",
+    "cgroup_memory_peak_bytes",
+    "cgroup_memory_limit_bytes",
+    "process_current_rss_bytes",
+    "process_max_rss_bytes",
+)
 
 
 class EvaluationError(RuntimeError):
@@ -515,6 +538,107 @@ def collect_request_logs(
     }
 
 
+def collect_resource_logs(
+    *,
+    project: str,
+    service: str,
+    revision: str,
+    started_at: datetime,
+    ended_at: datetime,
+    expected_request_ids: set[str],
+) -> dict[str, Any]:
+    lower = isoformat(started_at - timedelta(seconds=2))
+    upper = isoformat(ended_at + timedelta(seconds=2))
+    filter_expression = (
+        'resource.type="cloud_run_revision" '
+        f'AND resource.labels.service_name="{service}" '
+        f'AND resource.labels.revision_name="{revision}" '
+        f'AND jsonPayload.event="speech_resource_sample" '
+        f'AND timestamp>="{lower}" AND timestamp<="{upper}"'
+    )
+    selected: list[dict[str, Any]] = []
+    raw_entries: list[dict[str, Any]] = []
+    for attempt in range(6):
+        raw = run_gcloud(
+            [
+                "logging",
+                "read",
+                filter_expression,
+                "--project",
+                project,
+                f"--limit={len(expected_request_ids) + 10}",
+                "--order=asc",
+                "--format=json",
+            ]
+        )
+        candidate = json.loads(raw)
+        raw_entries = candidate if isinstance(candidate, list) else []
+        selected = [
+            entry
+            for entry in raw_entries
+            if isinstance(entry.get("jsonPayload"), dict)
+            and entry["jsonPayload"].get("request_id") in expected_request_ids
+        ]
+        if len(selected) >= len(expected_request_ids):
+            break
+        if attempt < 5:
+            time.sleep(3)
+
+    samples: list[dict[str, Any]] = []
+    fields_allowlisted = True
+    counters_nonnegative = True
+    for entry in selected:
+        payload = entry.get("jsonPayload", {})
+        if not isinstance(payload, dict):
+            fields_allowlisted = False
+            continue
+        fields_allowlisted = fields_allowlisted and set(payload).issubset(
+            RESOURCE_LOG_FIELDS
+        )
+        sample = {
+            field: payload.get(field)
+            for field in RESOURCE_LOG_FIELDS
+            if field in payload
+        }
+        for field in RESOURCE_BYTE_FIELDS:
+            value = sample.get(field)
+            if value is not None and (
+                not isinstance(value, int) or isinstance(value, bool) or value < 0
+            ):
+                counters_nonnegative = False
+        samples.append(sample)
+    samples.sort(key=lambda item: str(item.get("request_id")))
+    observed_ids = [str(sample.get("request_id")) for sample in samples]
+    exact_request_ids = (
+        len(observed_ids) == len(set(observed_ids))
+        and set(observed_ids) == expected_request_ids
+    )
+    all_available = all(
+        sample.get("resource_observation_available") is True for sample in samples
+    )
+    return {
+        "required": True,
+        "windowStart": lower,
+        "windowEnd": upper,
+        "expectedSuccessCount": len(expected_request_ids),
+        "observedSampleCount": len(samples),
+        "exactRequestIdsObserved": exact_request_ids,
+        "fieldsAllowlisted": fields_allowlisted,
+        "byteCountersNonnegativeIntegersOrNull": counters_nonnegative,
+        "allSamplesAvailable": all_available,
+        "samples": samples,
+        "audioOrTranscriptCollected": False,
+        "credentialsCollected": False,
+    }
+
+
+def memory_limit_bytes(value: Any) -> int | None:
+    if not isinstance(value, str):
+        return None
+    match = re.fullmatch(r"([1-9][0-9]*)Gi", value)
+    return int(match.group(1)) * (1024**3) if match else None
+
+
 def evaluate(
     *,
     project: str,
@@ -526,6 +650,7 @@ def evaluate(
     requests_per_batch: int,
     pause_seconds: float,
     timeout_seconds: float,
+    require_resource_logs: bool,
 ) -> dict[str, Any]:
     if not 1 <= batches <= MAX_BATCHES:
         raise EvaluationError(f"batches must be in [1, {MAX_BATCHES}]")
@@ -649,6 +774,37 @@ def evaluate(
         if result["httpStatus"] == 429
         and result["responseOrigin"] == "cloud_run_platform"
     ]
+    successful_request_ids = {
+        str(result["requestId"]) for result in successful
+    }
+    resource_logs = (
+        collect_resource_logs(
+            project=project,
+            service=service_name,
+            revision=revision,
+            started_at=experiment_started,
+            ended_at=experiment_ended,
+            expected_request_ids=successful_request_ids,
+        )
+        if require_resource_logs
+        else {
+            "required": False,
+            "claim": "resource log reconciliation was not requested",
+        }
+    )
+    expected_memory_limit = memory_limit_bytes(service.get("memory"))
+    resource_limits = [
+        sample.get("cgroup_memory_limit_bytes")
+        for sample in resource_logs.get("samples", [])
+    ]
+    resource_limit_matches = (
+        not require_resource_logs
+        or (
+            expected_memory_limit is not None
+            and bool(resource_limits)
+            and all(value == expected_memory_limit for value in resource_limits)
+        )
+    )
     safety_checks = {
         "allPlannedBatchesCompleted": len(batch_reports) == batches
         and stop_reason is None,
@@ -669,6 +825,15 @@ def evaluate(
             for batch in batch_reports
         ),
         "cloudRequestLogsReconciled": logs["allExpectedLogsObserved"],
+        "resourceLogsReconciled": not require_resource_logs
+        or resource_logs.get("exactRequestIdsObserved") is True,
+        "resourceFieldsAllowlisted": not require_resource_logs
+        or resource_logs.get("fieldsAllowlisted") is True,
+        "resourceCountersSafe": not require_resource_logs
+        or resource_logs.get("byteCountersNonnegativeIntegersOrNull") is True,
+        "resourceSamplesAvailable": not require_resource_logs
+        or resource_logs.get("allSamplesAvailable") is True,
+        "resourceLimitMatchesService": resource_limit_matches,
         "noCredentialOrPayloadStored": True,
     }
     decision = "채택" if all(safety_checks.values()) else "조건부 채택"
@@ -696,6 +861,7 @@ def evaluate(
             "hotwordsRequested": False,
             "automaticRetries": 0,
             "maxInstances": 1,
+            "resourceLogsRequired": require_resource_logs,
         },
         "aggregate": {
             "httpStatusCounts": status_counts(all_results),
@@ -732,6 +898,7 @@ def evaluate(
         },
         "batches": batch_reports,
         "cloudRunRequestLogReconciliation": logs,
+        "resourceObservation": resource_logs,
         "safetyChecks": safety_checks,
         "allSafetyChecksPassed": all(safety_checks.values()),
         "privacy": {
@@ -747,6 +914,7 @@ def evaluate(
                 "status",
                 "duration_ms",
             ],
+            "resourceLoggingSourceFields": sorted(RESOURCE_LOG_FIELDS),
             "logAbsenceClaimLimit": (
                 "전용 요청 구간의 Cloud Run request metadata와 배포 코드의 로그 필드를 "
                 "대조했으며 조직 전체 개인정보 감사를 의미하지 않는다."
@@ -765,6 +933,11 @@ def evaluate(
                 "현재 private 개발용 Speech revision의 반복 동시 5요청 상태·지연 분포",
                 "application 429와 Cloud Run platform 429의 구분",
                 "전사 성공 응답의 원음 미보존·hotword 미사용·판단 미수행 계약",
+                *(
+                    ["성공 요청별 numeric-only runtime resource sample 대조"]
+                    if require_resource_logs
+                    else []
+                ),
             ],
             "doesNotSupport": [
                 "실제 현장 무전 정확도나 안전성",
@@ -845,6 +1018,27 @@ def self_test() -> None:
         or not platform["contractValid"]
     ):
         raise AssertionError("429 origin classification failed")
+    safe_resource = {
+        "jsonPayload": {
+            "event": "speech_resource_sample",
+            "request_id": "REQ-TEST-1",
+            "processing_seconds": 1.2,
+            "audio_seconds": 7.4,
+            "resource_observation_available": True,
+            "cgroup_version": "v2",
+            "cgroup_memory_current_bytes": 123,
+            "cgroup_memory_peak_bytes": 456,
+            "cgroup_memory_limit_bytes": 789,
+            "process_current_rss_bytes": 100,
+            "process_max_rss_bytes": 200,
+        }
+    }
+    if not set(safe_resource["jsonPayload"]).issubset(RESOURCE_LOG_FIELDS):
+        raise AssertionError("resource event allowlist rejected safe fields")
+    unsafe_resource = dict(safe_resource["jsonPayload"])
+    unsafe_resource["transcript"] = "must-not-pass"
+    if set(unsafe_resource).issubset(RESOURCE_LOG_FIELDS):
+        raise AssertionError("resource event allowlist accepted transcript")
     print("Private Speech burst evaluator self-test passed.")
 
 
@@ -859,6 +1053,7 @@ def main() -> None:
     parser.add_argument("--requests-per-batch", type=int, default=5)
     parser.add_argument("--pause-seconds", type=float, default=2.0)
     parser.add_argument("--timeout-seconds", type=float, default=70.0)
+    parser.add_argument("--require-resource-logs", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
     if args.self_test:
@@ -877,6 +1072,7 @@ def main() -> None:
         requests_per_batch=args.requests_per_batch,
         pause_seconds=args.pause_seconds,
         timeout_seconds=args.timeout_seconds,
+        require_resource_logs=args.require_resource_logs,
     )
 
 
