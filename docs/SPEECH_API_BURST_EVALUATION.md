@@ -5,7 +5,8 @@
 - 반복 5×5 client·Cloud Run request log 대조 하네스: **구현 완료**
 - 현재 CPU 개발용 preview 직접 burst 평가: **부분 구현 또는 개발용 데모 — 검증 완료**
 - Backend를 우회한 Speech API 직접 공개 사용: **기각**
-- process peak·축소 자원 후보·GPU A/B: **설계 완료·구현 전**
+- numeric process/cgroup memory 관측: **부분 구현 또는 개발용 데모 — 검증 완료**
+- 축소 자원 후보·GPU A/B: **설계 완료·구현 전**
 - 실제 현장 무전·상용 traffic·고가용성: **검증되지 않은 가설**
 
 ## 평가 목표와 Gate
@@ -90,6 +91,70 @@ readiness 1건이 포함돼 25개 전사 요청을 26개로 집계했습니다. 
 **조건부 채택**입니다. 평가기를 POST `/api/v1/transcriptions`로 제한한 commit
 `3ac4203` 이후 r2를 다시 실행했습니다. r1에도 원음·전사문·인증값은 저장되지 않았습니다.
 
+## 30초 resource 관측과 timestamp 회귀
+
+### 첫 실행: 안전 중단
+
+2026-09-08에 공개 합성 7.4414초 입력을 공백과 함께 결정적으로 반복해 정확히 30초인
+파생 입력을 만들었습니다. 이는 **resource 관측용 모의 입력**이며 실제 신고전화·현장 무전
+또는 정확도 평가 자료가 아닙니다.
+
+첫 실행은 `MODEL_OUTPUT_INVALID` 502 한 건과 앱 429 한 건으로 중단했습니다. 같은
+`faster-whisper small`·CPU int8 조건을 로컬에서 전사문 없이 숫자만 재현한 결과, 입력과 모델
+audio duration은 모두 30.00초였지만 마지막 segment end가 30.26초였습니다. overlap·비유한값·
+quality range 위반은 각각 0건이었습니다. API가 허용하던 0.10초보다 0.26초가 커서 실패한
+것입니다.
+
+Speech Service PR #52는 입력 끝을 최대 0.5초 초과한 마지막 `end_seconds`만 실제 입력 길이로
+제한하고, segment 시작이 입력 밖이거나 더 큰 초과는 계속 502로 차단합니다. 전사문은
+수정하지 않습니다. 전체 unittest 109개를 통과한 뒤 merge commit
+`0dfd4905f754ca2ff2758a7c7a0828055bb71786`으로 배포했습니다.
+
+### 재실행 r3: 채택
+
+| 항목 | 실제 관찰값 |
+|---|---:|
+| revision | `chemicheck119-speech-api-preview-tsfix` |
+| image digest | `sha256:6788bbd3b6ee061457c2015bcb5a3f46ddee42dc08446777b5283a341bd00bd5` |
+| protocol | 30초 입력, 동시 2요청 × 3 batch, 자동 retry 0 |
+| 응답 | HTTP 200 3건 + 앱 429 3건 + 플랫폼 429 0건 |
+| client E2E | median 4.8546초, p95/max 9.0350초 |
+| 성공 추론 | median 7.7339초, p95/max 8.7518초 |
+| 성공 RTF | median 0.2578, max 0.2917 |
+| 성공 E2E − 추론 추정치 | median 0.2665초, max 0.2832초 |
+| resource log 대조 | 성공 request ID 3/3 일치, numeric allowlist 통과 |
+| 안전 Gate | 13개 검사 모두 통과 |
+
+| memory counter | median | max | 해석 한계 |
+|---|---:|---:|---|
+| cgroup current | 1.2947GiB | 1.2949GiB | 요청별 peak가 아닌 관측 시점 container 값 |
+| process current RSS | 1.4354GiB | 1.4356GiB | cgroup과 집계 의미가 달라 직접 차감 금지 |
+| process max RSS | 1.5360GiB | 1.5363GiB | process 생명주기 누적 high-water mark |
+| cgroup limit | 8GiB | 8GiB | 배포 설정과 일치 |
+| cgroup peak | 관측 불가 | 관측 불가 | Cloud Run에서 노출된 v1 경로에 counter 없음 |
+
+정적 IAM·Secret·scale audit 11개도 모두 통과했습니다. 정적 audit SHA-256은
+`13421419ffd65c39e01899ce4d4c126d901b9840f54a2ae0a0b63601ee391bd5`, 재실행 보고서
+SHA-256은 `fd3cff29c56c3bbb5bd6322f4b8cf37ec94c0f2f6463718c56463f4424221f9f`입니다.
+보고서에는 음성·전사문·응답 body·credential을 넣지 않았습니다.
+
+수정 image의 Cloud Build ID는 `b03b17df-3646-4ad2-bec1-37ce34dae91a`이고 build 시작부터
+종료까지 약 2.54분이었습니다. [Cloud Build 기본 worker 공식 단가](https://cloud.google.com/build/pricing)
+`$0.006/min`을 적용한 무료 구간 전
+목록가 추정은 약 `$0.0152`이며 실제 청구액은 아닙니다. GPU·새 상시 instance·자동 retry는
+사용하지 않았습니다.
+
+첫 성공 보고서 r2는 protocol 숫자는 동시 2요청으로 정확했지만 주장 범위 문장 한 곳이
+`동시 5요청`으로 고정돼 있었습니다. 원본 r2 SHA-256
+`1bea2331219ebced7f68b81939e0225ffd662784551d887dd667f362ba6dcc1d`를 보존하고 평가기의 해당
+문장을 실행 인자로 생성하도록 수정한 뒤 r3를 다시 실행했습니다. r3의 평가기 SHA-256은
+`1f4ef96fca1d19d71dc1fbd2c39687b9aa605ce795673c0091b26efdf75ab7db`입니다.
+
+결정은 **resource 관측 방법과 이번 측정값 채택**, **8GiB 축소 판단 보류**입니다. 동일 합성
+입력 성공 3건과 process high-water mark만으로 안전한 최소 memory를 확정할 수 없고 cgroup
+peak도 관측되지 않았습니다. 30초 입력의 CPU RTF가 모두 1 미만이므로 지금 GPU를 먼저
+투입할 근거도 없지만, 이 결과를 장문·실제 traffic·LoRA 후보에 일반화하지 않습니다.
+
 ## 재현 명령
 
 원음과 보고서는 Git 밖의 승인된 비공개 경로에 둡니다.
@@ -104,7 +169,8 @@ python3 scripts/evaluate_private_speech_burst.py \
   --batches 5 \
   --requests-per-batch 5 \
   --pause-seconds 2 \
-  --timeout-seconds 70
+  --timeout-seconds 70 \
+  --require-resource-logs
 ```
 
 평가기 source SHA-256은
@@ -113,7 +179,7 @@ python3 scripts/evaluate_private_speech_burst.py \
 ## 주장할 수 없는 범위
 
 - 실제 신고 전화나 현장 무전 정확도·안전성
-- 동시에 모델 추론된 process 수의 계측값
+- 동시에 모델 추론된 process 수와 cgroup peak의 계측값
 - 다중 인스턴스 전역 제한·상용 capacity·고가용성
 - GPU의 실제 latency·비용 우위
 - 조직 전체 로그·개인정보 감사

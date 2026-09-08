@@ -19,6 +19,7 @@
 | Cloud Run GPU 평가 | L4 할당량 요청 거절·구현 전 |
 | Compute Engine L4 LoRA runner | 구현 완료·실행 전 |
 | private Speech API Cloud Run | 개발용 preview 배포·IAM·Backend 연결 smoke 완료 |
+| Speech API runtime resource 관측 | 30초 합성 파생 입력 성공 3건의 numeric log 대조 완료; 자원 축소 판단 전 |
 | GCP 결제 예산 알림 | 월 50,000원·실제 지출 100% 단일 알림 구성 완료 |
 | 고가용성 상용 운영 | 설계·검증 전 |
 
@@ -118,7 +119,7 @@ instance 종료 로그 뒤 같은 30.16초 WAV를 보낸 scale-to-zero cold smok
 14.4097초였습니다. warm-sequence E2E median 4.8307초보다 9.5790초 길었습니다. 이는
 단일 cold 관찰값이므로 tail latency나 제한 시간 내 성공 보장이 아닙니다.
 
-이 값들은 제한된 연결·동시 요청·cold smoke 결과입니다. memory process peak, 자원 축소,
+이 값들은 제한된 연결·동시 요청·cold smoke 결과입니다. 안전한 자원 축소, cgroup peak,
 실제 timeout, 교차지역 정확도 또는 현장 무전 안전성을 검증한 결과가 아닙니다.
 따라서 상태는
 **부분 구현 또는 개발용 데모**이며 상용 운영 경험으로 표현하지 않습니다.
@@ -127,6 +128,12 @@ instance 종료 로그 뒤 같은 30.16초 WAV를 보낸 scale-to-zero cold smok
 [Speech API private Cloud Run 배포](docs/SPEECH_API_CLOUD_RUN.md)를 따릅니다.
 직접 5×5 분포와 queue 병목·GPU 판단은
 [Speech API 직접 burst 평가](docs/SPEECH_API_BURST_EVALUATION.md)에 기록합니다.
+
+2026-09-08에는 30초 공개 합성 파생 입력을 동시 2요청씩 3회 실행해 HTTP 200 3건과 앱 429
+3건을 관찰했고, 성공 request ID 3건의 숫자 resource log를 모두 대조했습니다. 성공 추론 RTF
+최대는 0.2917, process max RSS 최대는 1.5363GiB였습니다. cgroup peak는 Cloud Run의 v1
+경로에서 노출되지 않았고 표본도 동일 합성 입력 3건뿐이므로 8GiB 축소는 아직 결정하지
+않습니다. 이 결과는 실제 무전·상용 부하·GPU 비교가 아닙니다.
 
 ## 비용 경계
 

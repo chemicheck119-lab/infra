@@ -843,7 +843,10 @@ def evaluate(
         "classification": "부분 구현 또는 개발용 데모",
         "decision": decision,
         "stopReason": stop_reason,
-        "goal": "private Speech API 동시 5요청의 플랫폼 queue·app busy 분포를 반복 측정",
+        "goal": (
+            f"private Speech API 동시 {requests_per_batch}요청의 "
+            "플랫폼 queue·app busy 분포를 반복 측정"
+        ),
         "hypothesis": (
             "CPU 4·8GiB, Cloud Run concurrency 4, app semaphore 1, max instance 1에서 "
             "동시 burst는 정상 전사와 명시적 429로만 종료되고 안전 응답 경계를 유지한다."
@@ -930,7 +933,10 @@ def evaluate(
         },
         "claimBoundary": {
             "supports": [
-                "현재 private 개발용 Speech revision의 반복 동시 5요청 상태·지연 분포",
+                (
+                    "현재 private 개발용 Speech revision의 반복 동시 "
+                    f"{requests_per_batch}요청 상태·지연 분포"
+                ),
                 "application 429와 Cloud Run platform 429의 구분",
                 "전사 성공 응답의 원음 미보존·hotword 미사용·판단 미수행 계약",
                 *(
