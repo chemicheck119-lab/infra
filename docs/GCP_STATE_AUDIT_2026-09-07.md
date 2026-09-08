@@ -61,8 +61,11 @@ tag URL은 service IAM을 공유하므로 호출 가능한 과거 revision 수�
 | backup | 일 1회, 7개 보존, PITR 7일 | staging 복구 기반은 존재 |
 | deletion protection | 활성 | 실수 삭제 방지 |
 
-TLS 강제와 storage 상한 변경은 Backend JDBC URL·인증서 방식, migration, readiness, rollback을
-함께 검증해야 합니다. 이번 감사에서는 변경하지 않았습니다. 미사용 시간 중지는 기존
+읽기 전용 [Cloud SQL hardening 감사](CLOUD_SQL_HARDENING_AUDIT.md)에서 Backend Database URL
+Secret에 명시적 `sslmode`과 `sslrootcert`가 없고, pgJDBC 42.7.3을 사용함을 확인했습니다.
+Secret 원문은 출력하지 않았습니다. TLS 강제와 storage 상한 변경은 Backend JDBC URL·인증서
+방식, migration, readiness, rollback을 함께 검증해야 합니다. 이번 감사에서는 변경하지
+않았습니다. 미사용 시간 중지는 기존
 [Cloud SQL 비용 이슈](https://github.com/chemicheck119-lab/infra/issues/3)에서 관리합니다.
 
 ## 저장소와 빌드 artifact
