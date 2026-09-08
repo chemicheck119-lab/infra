@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 from collections import defaultdict
@@ -20,7 +21,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
 
 
-SCHEMA_VERSION = "chemicheck119-artifact-cleanup-audit-v1"
+SCHEMA_VERSION = "chemicheck119-artifact-cleanup-audit-v2"
 SCRIPT_DIRECTORY = Path(__file__).resolve().parent
 INFRA_DIRECTORY = SCRIPT_DIRECTORY.parent
 DEFAULT_CONFIG = INFRA_DIRECTORY / "config" / "artifact_cleanup_protected.json"
@@ -48,7 +49,10 @@ def _active_project() -> str:
 
 
 def _parse_time(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+    normalized = value.replace("Z", "+00:00")
+    if re.search(r"[+-]\d{4}$", normalized):
+        normalized = f"{normalized[:-2]}:{normalized[-2:]}"
+    return datetime.fromisoformat(normalized).astimezone(timezone.utc)
 
 
 def _sha256(path: Path) -> str:
@@ -159,6 +163,7 @@ def _collect_runtime_protection(
                         "service": service_name,
                         "revision": revision,
                         "tag": tag,
+                        "url": str(traffic.get("url") or ""),
                     }
                 )
             revision_payload = runner(
@@ -216,6 +221,151 @@ def _collect_runtime_protection(
     )
 
 
+def _collect_build_bucket(
+    *,
+    project: str,
+    bucket: str,
+    now: datetime,
+    older_than_days: int,
+    runner: CommandRunner,
+) -> dict[str, Any]:
+    bucket_payload = runner(
+        [
+            "storage",
+            "buckets",
+            "describe",
+            f"gs://{bucket}",
+            f"--project={project}",
+        ]
+    )
+    objects = runner(
+        [
+            "storage",
+            "objects",
+            "list",
+            f"gs://{bucket}/**",
+            f"--project={project}",
+        ]
+    )
+    cutoff = now - timedelta(days=older_than_days)
+    candidate_objects: list[dict[str, Any]] = []
+    total_size_bytes = 0
+    for row in sorted(objects or [], key=lambda item: str(item.get("name") or "")):
+        created_raw = str(row.get("creation_time") or row.get("createTime") or "")
+        if not created_raw:
+            raise ValueError("Cloud Build object creation time이 비어 있습니다.")
+        created_at = _parse_time(created_raw)
+        size_bytes = int(row.get("size") or 0)
+        total_size_bytes += size_bytes
+        if created_at <= cutoff:
+            candidate_objects.append(
+                {
+                    "name": str(row.get("name") or ""),
+                    "created_at": created_at.isoformat().replace("+00:00", "Z"),
+                    "size_bytes": size_bytes,
+                }
+            )
+
+    soft_delete = bucket_payload.get("soft_delete_policy") or {}
+    retention_seconds = int(soft_delete.get("retentionDurationSeconds") or 0)
+    lifecycle = bucket_payload.get("lifecycle_config") or {}
+    lifecycle_rules = lifecycle.get("rule") or []
+    candidate_size_bytes = sum(row["size_bytes"] for row in candidate_objects)
+    return {
+        "bucket": bucket,
+        "location": str(bucket_payload.get("location") or ""),
+        "storage_class": str(bucket_payload.get("default_storage_class") or ""),
+        "object_count": len(objects or []),
+        "total_live_size_bytes": total_size_bytes,
+        "lifecycle_rule_count": len(lifecycle_rules),
+        "soft_delete_retention_seconds": retention_seconds,
+        "simulated_lifecycle": {
+            "older_than_days": older_than_days,
+            "cutoff": cutoff.isoformat().replace("+00:00", "Z"),
+            "candidate_count": len(candidate_objects),
+            "candidate_live_size_bytes": candidate_size_bytes,
+            "candidate_bytes_subject_to_soft_delete_retention": (
+                candidate_size_bytes if retention_seconds > 0 else 0
+            ),
+            "earliest_permanent_removal_delay_seconds": retention_seconds,
+            "candidates": candidate_objects,
+        },
+    }
+
+
+def _scan_zero_traffic_tag_urls(
+    *, zero_traffic_tags: list[dict[str, Any]], source_roots: Sequence[Path]
+) -> dict[str, Any]:
+    roots: list[dict[str, str]] = []
+    matches: list[dict[str, Any]] = []
+    traffic_by_url = {
+        str(traffic.get("url") or ""): traffic
+        for traffic in zero_traffic_tags
+        if traffic.get("url")
+    }
+    pattern_input = "\n".join(sorted(traffic_by_url)) + "\n"
+    for root in source_roots:
+        resolved = root.resolve()
+        if not (resolved / ".git").exists():
+            raise ValueError(f"Git source root가 아닙니다: {resolved}")
+        roots.append({"name": resolved.name, "path": str(resolved)})
+        if not traffic_by_url:
+            continue
+        completed = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(resolved),
+                "grep",
+                "--line-number",
+                "--fixed-strings",
+                "-f",
+                "-",
+                "--",
+                ".",
+            ],
+            input=pattern_input,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if completed.returncode not in {0, 1}:
+            raise RuntimeError(
+                f"tracked URL 검색에 실패했습니다: {resolved.name}: "
+                f"{completed.stderr.strip()}"
+            )
+        for line in completed.stdout.splitlines():
+            file_name, line_number, content = line.split(":", 2)
+            for url, traffic in traffic_by_url.items():
+                if url not in content:
+                    continue
+                matches.append(
+                    {
+                        "source_root": resolved.name,
+                        "file": file_name,
+                        "line": int(line_number),
+                        "service": traffic["service"],
+                        "revision": traffic["revision"],
+                        "tag": traffic["tag"],
+                        "url": url,
+                    }
+                )
+    return {
+        "tracked_source_only": True,
+        "source_roots": roots,
+        "matched_reference_count": len(matches),
+        "matches": sorted(
+            matches,
+            key=lambda row: (
+                row["source_root"],
+                row["file"],
+                row["line"],
+                row["url"],
+            ),
+        ),
+    }
+
+
 def _build_report(
     *,
     images: list[dict[str, Any]],
@@ -228,6 +378,8 @@ def _build_report(
     region: str,
     repository: str,
     config_path: Path,
+    build_bucket: dict[str, Any] | None = None,
+    zero_traffic_tag_reference_scan: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     cutoff = now - timedelta(days=older_than_days)
     candidates: list[dict[str, Any]] = []
@@ -271,6 +423,8 @@ def _build_report(
         ),
         "zero_traffic_tag_count": len(zero_traffic_tags),
         "zero_traffic_tags": zero_traffic_tags,
+        "zero_traffic_tag_reference_scan": zero_traffic_tag_reference_scan,
+        "cloud_build_bucket": build_bucket,
         "candidates": candidates,
         "protected_images": protected_rows,
         "artifacts": {
@@ -287,6 +441,8 @@ def _build_report(
             "후보 목록은 실제 삭제나 Artifact Registry cleanup policy dry-run 적용 결과가 아닙니다.",
             "manifest 크기 합계는 공유 layer 중복 때문에 실제 회수 용량과 다를 수 있습니다.",
             "Cloud Run·Job과 수동 allowlist 밖의 외부 digest 참조는 자동 탐지하지 못합니다.",
+            "tracked source URL 검색은 외부 문서·브라우저 북마크·수동 호출 의존성을 증명하지 못합니다.",
+            "Cloud Build lifecycle 후보 크기는 soft-delete 보존 종료 전 즉시 절감되는 저장량이 아닙니다.",
             "tag·revision·image 삭제에는 별도 사용자 승인과 적용 후 smoke 검증이 필요합니다.",
         ],
     }
@@ -359,12 +515,58 @@ def _self_test() -> None:
         region="test-region",
         repository="test-repo",
         config_path=config,
+        build_bucket={
+            "bucket": "test_cloudbuild",
+            "object_count": 2,
+            "total_live_size_bytes": 30,
+        },
+        zero_traffic_tag_reference_scan={
+            "tracked_source_only": True,
+            "matched_reference_count": 0,
+        },
     )
     assert report["candidate_count"] == 1
     assert report["candidates"][0]["digest"] == "sha256:" + "1" * 64
     assert report["candidate_manifest_size_bytes"] == 10
     assert report["protected_image_count"] == 1
     assert report["cleanup_policy_applied"] is False
+    assert report["cloud_build_bucket"]["total_live_size_bytes"] == 30
+    assert report["zero_traffic_tag_reference_scan"]["matched_reference_count"] == 0
+
+    build_bucket = _collect_build_bucket(
+        project="test",
+        bucket="test_cloudbuild",
+        now=now,
+        older_than_days=30,
+        runner=lambda arguments: (
+            {
+                "location": "US",
+                "default_storage_class": "STANDARD",
+                "soft_delete_policy": {"retentionDurationSeconds": "604800"},
+            }
+            if arguments[1:3] == ["buckets", "describe"]
+            else [
+                {
+                    "name": "source/old.tgz",
+                    "creation_time": "2026-07-01T00:00:00+0000",
+                    "size": 10,
+                },
+                {
+                    "name": "source/new.tgz",
+                    "creation_time": "2026-09-01T00:00:00+0000",
+                    "size": 20,
+                },
+            ]
+        ),
+    )
+    assert build_bucket["object_count"] == 2
+    assert build_bucket["simulated_lifecycle"]["candidate_count"] == 1
+    assert build_bucket["simulated_lifecycle"]["candidate_live_size_bytes"] == 10
+    assert (
+        build_bucket["simulated_lifecycle"]
+        ["candidate_bytes_subject_to_soft_delete_retention"]
+        == 10
+    )
     print("Artifact cleanup audit self-test passed.")
 
 
@@ -373,8 +575,10 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--project", default="chemi-check")
     parser.add_argument("--region", default="asia-northeast3")
     parser.add_argument("--repository", default="chemicheck119")
+    parser.add_argument("--build-bucket")
     parser.add_argument("--older-than-days", type=int, default=30)
     parser.add_argument("--protection-config", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument("--source-root", type=Path, action="append", default=[])
     parser.add_argument("--output", type=Path)
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args(list(argv) if argv is not None else None)
@@ -409,11 +613,24 @@ def main(argv: Iterable[str] | None = None) -> int:
     )
     for digest, reasons in runtime_protected.items():
         protected[digest].extend(reasons)
+    build_bucket_name = args.build_bucket or f"{args.project}_cloudbuild"
+    observed_at = datetime.now(timezone.utc)
+    build_bucket = _collect_build_bucket(
+        project=args.project,
+        bucket=build_bucket_name,
+        now=observed_at,
+        older_than_days=args.older_than_days,
+        runner=_run_json,
+    )
+    tag_reference_scan = _scan_zero_traffic_tag_urls(
+        zero_traffic_tags=zero_traffic_tags,
+        source_roots=args.source_root,
+    )
     report = _build_report(
         images=images or [],
         protected=protected,
         zero_traffic_tags=zero_traffic_tags,
-        now=datetime.now(timezone.utc),
+        now=observed_at,
         older_than_days=args.older_than_days,
         repository_size_bytes=_repository_size(
             project=args.project,
@@ -425,6 +642,8 @@ def main(argv: Iterable[str] | None = None) -> int:
         region=args.region,
         repository=args.repository,
         config_path=args.protection_config,
+        build_bucket=build_bucket,
+        zero_traffic_tag_reference_scan=tag_reference_scan,
     )
     _write(report, args.output)
     return 0

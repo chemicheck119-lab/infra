@@ -48,6 +48,11 @@ python3 -m py_compile "${SCRIPT_DIRECTORY}/audit_artifact_cleanup.py"
 python3 -m py_compile "${SCRIPT_DIRECTORY}/audit_private_speech_api.py"
 python3 "${SCRIPT_DIRECTORY}/audit_artifact_cleanup.py" --self-test
 python3 "${SCRIPT_DIRECTORY}/audit_private_speech_api.py" --self-test
+grep -q '"storage",' "${SCRIPT_DIRECTORY}/audit_artifact_cleanup.py"
+grep -q '"objects",' "${SCRIPT_DIRECTORY}/audit_artifact_cleanup.py"
+grep -q 'candidate_bytes_subject_to_soft_delete_retention' \
+  "${SCRIPT_DIRECTORY}/audit_artifact_cleanup.py"
+grep -q 'tracked_source_only' "${SCRIPT_DIRECTORY}/audit_artifact_cleanup.py"
 if grep -Eq '"(delete|update|set-cleanup-policies|remove-tags)"' \
   "${SCRIPT_DIRECTORY}/audit_artifact_cleanup.py"; then
   echo "artifact cleanup auditor must remain read-only" >&2
