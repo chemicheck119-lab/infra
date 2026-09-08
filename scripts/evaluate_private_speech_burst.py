@@ -23,7 +23,7 @@ from urllib.request import Request, urlopen
 import wave
 
 
-SCHEMA_VERSION = "chemicheck119-private-speech-platform-burst-v1"
+SCHEMA_VERSION = "chemicheck119-private-speech-platform-burst-v2"
 USER_AGENT = "chemicheck119-burst-evaluator/1.0"
 EXPECTED_SCHEMA = "chemicheck119-speech-api-v1"
 MAX_AUDIO_BYTES = 16 * 1024 * 1024
@@ -34,6 +34,9 @@ MAX_REQUESTS_PER_BATCH = 10
 MAX_TOTAL_AUDIO_SECONDS = 3_600.0
 EXPECTED_CONTAINER_CONCURRENCY = 4
 EXPECTED_MAX_INSTANCES = "1"
+ALLOWED_EXPECTED_CPUS = frozenset({"1", "2", "4"})
+ALLOWED_EXPECTED_MEMORIES = frozenset({"2Gi", "4Gi", "8Gi"})
+TRAFFIC_TAG_PATTERN = re.compile(r"^[a-z][a-z0-9-]{0,62}$")
 ALLOWED_HTTP_STATUSES = frozenset({200, 429})
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 RESOURCE_LOG_FIELDS = frozenset(
@@ -148,7 +151,13 @@ def read_audio_metadata(path: Path) -> tuple[bytes, dict[str, Any]]:
     }
 
 
-def service_snapshot(service: dict[str, Any]) -> dict[str, Any]:
+def service_snapshot(
+    service: dict[str, Any],
+    *,
+    expected_cpu: str,
+    expected_memory: str,
+    traffic_tag: str | None,
+) -> dict[str, Any]:
     template = service.get("spec", {}).get("template", {})
     template_metadata = template.get("metadata", {})
     spec = template.get("spec", {})
@@ -173,6 +182,27 @@ def service_snapshot(service: dict[str, Any]) -> dict[str, Any]:
         value = env_by_name.get(name, {}).get("value")
         return value if isinstance(value, str) else None
 
+    service_status = service.get("status", {})
+    if traffic_tag:
+        if not TRAFFIC_TAG_PATTERN.fullmatch(traffic_tag):
+            raise EvaluationError("traffic tag violates the bounded name format")
+        matching_traffic = [
+            row
+            for row in service_status.get("traffic", [])
+            if isinstance(row, dict) and row.get("tag") == traffic_tag
+        ]
+        if len(matching_traffic) != 1:
+            raise EvaluationError("requested zero-traffic tag was not found exactly once")
+        traffic_target = matching_traffic[0]
+        if int(traffic_target.get("percent", 0)) != 0:
+            raise EvaluationError("resource candidate tag must receive zero percent traffic")
+        service_url = traffic_target.get("url")
+        revision = traffic_target.get("revisionName")
+    else:
+        service_url = service_status.get("url")
+        revision = service_status.get("latestReadyRevisionName")
+
+    template_revision = template_metadata.get("name")
     checks = {
         "immutableImageDigest": "@sha256:" in image,
         "maxInstanceOne": annotations.get("autoscaling.knative.dev/maxScale")
@@ -182,8 +212,11 @@ def service_snapshot(service: dict[str, Any]) -> dict[str, Any]:
         "containerConcurrencyFour": spec.get("containerConcurrency")
         == EXPECTED_CONTAINER_CONCURRENCY,
         "requestTimeoutBounded": 1 <= int(spec.get("timeoutSeconds", 0)) <= 60,
-        "cpuBaseline": resources.get("cpu") == "4",
-        "memoryBaseline": resources.get("memory") == "8Gi",
+        "cpuMatchesExpected": resources.get("cpu") == expected_cpu,
+        "memoryMatchesExpected": resources.get("memory") == expected_memory,
+        "targetRevisionMatchesTemplate": revision == template_revision,
+        "zeroTrafficTag": traffic_tag is None
+        or int(traffic_target.get("percent", 0)) == 0,
         "fasterWhisperSmall": env_value("CHEMICHECK119_SPEECH_MODEL") == "small",
         "cpuDevice": env_value("CHEMICHECK119_SPEECH_DEVICE") == "cpu",
         "int8Compute": env_value("CHEMICHECK119_SPEECH_COMPUTE_TYPE") == "int8",
@@ -198,8 +231,12 @@ def service_snapshot(service: dict[str, Any]) -> dict[str, Any]:
     }
     return {
         "name": service.get("metadata", {}).get("name"),
-        "revision": service.get("status", {}).get("latestReadyRevisionName"),
-        "url": service.get("status", {}).get("url"),
+        "revision": revision,
+        "url": service_url,
+        "trafficTag": traffic_tag,
+        "trafficPercent": (
+            int(traffic_target.get("percent", 0)) if traffic_tag else None
+        ),
         "imageDigestUri": image,
         "runtimeServiceAccount": spec.get("serviceAccountName"),
         "containerConcurrency": spec.get("containerConcurrency"),
@@ -208,6 +245,8 @@ def service_snapshot(service: dict[str, Any]) -> dict[str, Any]:
         "minInstances": annotations.get("autoscaling.knative.dev/minScale", "0"),
         "cpu": resources.get("cpu"),
         "memory": resources.get("memory"),
+        "expectedCpu": expected_cpu,
+        "expectedMemory": expected_memory,
         "model": env_value("CHEMICHECK119_SPEECH_MODEL"),
         "device": env_value("CHEMICHECK119_SPEECH_DEVICE"),
         "computeType": env_value("CHEMICHECK119_SPEECH_COMPUTE_TYPE"),
@@ -651,6 +690,9 @@ def evaluate(
     pause_seconds: float,
     timeout_seconds: float,
     require_resource_logs: bool,
+    expected_cpu: str,
+    expected_memory: str,
+    traffic_tag: str | None,
 ) -> dict[str, Any]:
     if not 1 <= batches <= MAX_BATCHES:
         raise EvaluationError(f"batches must be in [1, {MAX_BATCHES}]")
@@ -660,6 +702,10 @@ def evaluate(
         )
     if not 0 <= pause_seconds <= 10 or not 1 <= timeout_seconds <= 75:
         raise EvaluationError("pause or timeout exceeds the bounded range")
+    if expected_cpu not in ALLOWED_EXPECTED_CPUS:
+        raise EvaluationError("expected CPU is outside the bounded candidate set")
+    if expected_memory not in ALLOWED_EXPECTED_MEMORIES:
+        raise EvaluationError("expected memory is outside the bounded candidate set")
     if output.exists() or output.is_symlink() or not output.parent.is_dir():
         raise EvaluationError("output must be a new file in an existing directory")
     audio_content, audio_metadata = read_audio_metadata(audio_path)
@@ -669,9 +715,14 @@ def evaluate(
     if total_audio_seconds > MAX_TOTAL_AUDIO_SECONDS:
         raise EvaluationError("planned audio workload exceeds the bounded limit")
 
-    service = service_snapshot(load_service(project, region, service_name))
+    service = service_snapshot(
+        load_service(project, region, service_name),
+        expected_cpu=expected_cpu,
+        expected_memory=expected_memory,
+        traffic_tag=traffic_tag,
+    )
     if not service["allChecksPassed"]:
-        raise EvaluationError("deployed Speech API does not match the CPU baseline")
+        raise EvaluationError("deployed Speech API does not match the resource candidate")
     service_url = service.get("url")
     secret_name = service.get("apiKeySecretName")
     secret_version = service.get("apiKeySecretVersionSelector")
@@ -848,10 +899,12 @@ def evaluate(
             "플랫폼 queue·app busy 분포를 반복 측정"
         ),
         "hypothesis": (
-            "CPU 4·8GiB, Cloud Run concurrency 4, app semaphore 1, max instance 1에서 "
+            f"CPU {service['cpu']}·{service['memory']}, Cloud Run concurrency 4, "
+            "app semaphore 1, max instance 1에서 "
             "동시 burst는 정상 전사와 명시적 429로만 종료되고 안전 응답 경계를 유지한다."
         ),
         "service": service,
+        "readinessPreflight": ready,
         "source": audio_metadata,
         "protocol": {
             "batchesPlanned": batches,
@@ -865,6 +918,9 @@ def evaluate(
             "automaticRetries": 0,
             "maxInstances": 1,
             "resourceLogsRequired": require_resource_logs,
+            "trafficTag": traffic_tag,
+            "expectedCpu": expected_cpu,
+            "expectedMemory": expected_memory,
         },
         "aggregate": {
             "httpStatusCounts": status_counts(all_results),
@@ -1045,6 +1101,61 @@ def self_test() -> None:
     unsafe_resource["transcript"] = "must-not-pass"
     if set(unsafe_resource).issubset(RESOURCE_LOG_FIELDS):
         raise AssertionError("resource event allowlist accepted transcript")
+    candidate_service = {
+        "metadata": {"name": "speech"},
+        "spec": {
+            "template": {
+                "metadata": {
+                    "name": "speech-mem4",
+                    "annotations": {"autoscaling.knative.dev/maxScale": "1"},
+                },
+                "spec": {
+                    "containerConcurrency": 4,
+                    "timeoutSeconds": 60,
+                    "serviceAccountName": "runtime@example.iam.gserviceaccount.com",
+                    "containers": [
+                        {
+                            "image": "registry/speech@sha256:" + "a" * 64,
+                            "resources": {"limits": {"cpu": "4", "memory": "4Gi"}},
+                            "env": [
+                                {"name": "CHEMICHECK119_SPEECH_MODEL", "value": "small"},
+                                {"name": "CHEMICHECK119_SPEECH_DEVICE", "value": "cpu"},
+                                {"name": "CHEMICHECK119_SPEECH_COMPUTE_TYPE", "value": "int8"},
+                                {"name": "CHEMICHECK119_SPEECH_LOCAL_FILES_ONLY", "value": "true"},
+                                {"name": "CHEMICHECK119_SPEECH_ALLOW_ANONYMOUS", "value": "false"},
+                                {
+                                    "name": "CHEMICHECK119_SPEECH_API_KEY",
+                                    "valueFrom": {
+                                        "secretKeyRef": {"name": "speech-key", "key": "latest"}
+                                    },
+                                },
+                            ],
+                        }
+                    ],
+                },
+            }
+        },
+        "status": {
+            "url": "https://speech.example.run.app",
+            "latestReadyRevisionName": "speech-mem4",
+            "traffic": [
+                {
+                    "tag": "mem4",
+                    "percent": 0,
+                    "revisionName": "speech-mem4",
+                    "url": "https://mem4---speech.example.run.app",
+                }
+            ],
+        },
+    }
+    candidate = service_snapshot(
+        candidate_service,
+        expected_cpu="4",
+        expected_memory="4Gi",
+        traffic_tag="mem4",
+    )
+    if not candidate["allChecksPassed"] or candidate["trafficPercent"] != 0:
+        raise AssertionError("zero-traffic resource candidate was rejected")
     print("Private Speech burst evaluator self-test passed.")
 
 
@@ -1060,6 +1171,9 @@ def main() -> None:
     parser.add_argument("--pause-seconds", type=float, default=2.0)
     parser.add_argument("--timeout-seconds", type=float, default=70.0)
     parser.add_argument("--require-resource-logs", action="store_true")
+    parser.add_argument("--expected-cpu", default="4")
+    parser.add_argument("--expected-memory", default="8Gi")
+    parser.add_argument("--traffic-tag")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
     if args.self_test:
@@ -1079,6 +1193,9 @@ def main() -> None:
         pause_seconds=args.pause_seconds,
         timeout_seconds=args.timeout_seconds,
         require_resource_logs=args.require_resource_logs,
+        expected_cpu=args.expected_cpu,
+        expected_memory=args.expected_memory,
+        traffic_tag=args.traffic_tag,
     )
 
 

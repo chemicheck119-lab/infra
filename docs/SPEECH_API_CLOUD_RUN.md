@@ -7,7 +7,8 @@
 - Backend 연결·제한 WAV 1건 추론: **부분 구현 또는 개발용 데모**
 - cold/warm·직접 5×5 burst·실패 경계: **부분 구현 또는 개발용 데모 — 검증 완료**
 - numeric process/cgroup memory 관측: **부분 구현 또는 개발용 데모 — 검증 완료**
-- 축소 자원·GPU 비교: **설계 완료·구현 전**
+- CPU 4·4GiB zero-traffic 후보 비교: **부분 구현 또는 개발용 데모 — 30초·58초 Gate 통과, live traffic 미이동**
+- GPU 비교: **설계 완료·실행 근거 없음**
 - 실제 Pad·현장 무전 효과: **검증되지 않은 가설**
 
 실제 service revision과 추론을 확인한 뒤에도 범위는 **부분 구현 또는 개발용 데모**입니다.
@@ -153,3 +154,9 @@ infra #27에서 추적합니다. 이 검증 전에는 “GCP에서 실제 음성
 
 직접 burst의 protocol·실패 r1·GPU 판단은
 [`SPEECH_API_BURST_EVALUATION.md`](SPEECH_API_BURST_EVALUATION.md)에 분리해 기록했습니다.
+
+CPU 4·4GiB zero-traffic 후보의 사전 등록 조건과 실행 순서는
+[`SPEECH_API_RESOURCE_RIGHTSIZING.md`](SPEECH_API_RESOURCE_RIGHTSIZING.md)에 분리했습니다.
+평가기 v2는 `--traffic-tag`, `--expected-cpu`, `--expected-memory`를 검증해 0% tag URL과
+최신 template revision이 일치할 때만 실행합니다. 이는 후보 배포를 자동으로 수행하거나 live
+traffic을 변경하는 도구가 아닙니다.
