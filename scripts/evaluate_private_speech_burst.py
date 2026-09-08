@@ -363,11 +363,23 @@ def request_once(
         expected_request_id=request_id,
         response_request_id=response_request_id,
     )
+    client_latency = ended - started
+    processing_seconds = summary.get("processingSeconds")
+    non_inference_seconds = (
+        max(0.0, client_latency - float(processing_seconds))
+        if isinstance(processing_seconds, (int, float))
+        else None
+    )
     return {
         "requestId": request_id,
         "startedAt": isoformat(started_at),
         "endedAt": isoformat(ended_at),
-        "clientLatencySeconds": round(ended - started, 6),
+        "clientLatencySeconds": round(client_latency, 6),
+        "clientNonInferenceSecondsEstimate": (
+            round(non_inference_seconds, 6)
+            if non_inference_seconds is not None
+            else None
+        ),
         "transportErrorType": transport_error_type,
         **summary,
     }
@@ -452,6 +464,8 @@ def collect_request_logs(
         'AND logName="projects/'
         f'{project}/logs/run.googleapis.com%2Frequests" '
         f'AND httpRequest.userAgent="{USER_AGENT}" '
+        'AND httpRequest.requestMethod="POST" '
+        'AND httpRequest.requestUrl:"/api/v1/transcriptions" '
         f'AND timestamp>="{lower}" AND timestamp<="{upper}"'
     )
     entries: list[dict[str, Any]] = []
@@ -703,6 +717,16 @@ def evaluate(
                     float(result["realTimeFactor"])
                     for result in successful
                     if isinstance(result.get("realTimeFactor"), (int, float))
+                ]
+            ),
+            "successClientNonInferenceSecondsEstimate": latency_summary(
+                [
+                    float(result["clientNonInferenceSecondsEstimate"])
+                    for result in successful
+                    if isinstance(
+                        result.get("clientNonInferenceSecondsEstimate"),
+                        (int, float),
+                    )
                 ]
             ),
         },
