@@ -135,8 +135,9 @@ instance 종료 로그 뒤 같은 30.16초 WAV를 보낸 scale-to-zero cold smok
 zero-traffic 후보에서 30초와 58초를 각각 동시 2요청×3 batch로 실행했습니다. 두 길이 모두
 200 3건·application 429 3건·5xx 0건, request/resource log 3/3, 안전검사 13/13을 통과했고
 process max RSS는 최대 1.5422GiB였습니다. 따라서 4GiB를 추가 검증할 우선 후보로 조건부
-채택했지만, 동일 합성 문장의 성공 6건이고 cgroup peak도 없어 live 100% traffic은 8GiB
-`tsfix`에 유지합니다. 자세한 판정은
+채택했지만, 동일 합성 문장의 성공 6건이고 cgroup peak도 없어 동일 image의 8GiB
+`baseline1`을 최신 template·100% traffic으로 복원했습니다. `mem4g` tag는 0%로 남아
+있습니다. 자세한 판정은
 [Speech API 4GiB 자원 후보 검증](docs/SPEECH_API_RESOURCE_RIGHTSIZING.md)에 기록합니다.
 이 결과는 실제 무전·상용 부하·GPU 비교가 아닙니다.
 

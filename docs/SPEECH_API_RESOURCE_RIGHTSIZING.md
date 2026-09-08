@@ -64,8 +64,10 @@ python3 scripts/evaluate_private_speech_burst.py \
 ## 2026-09-08 실행 결과
 
 후보 revision `chemicheck119-speech-api-preview-mem4g1`을 같은 image digest로 배포했다.
-`mem4g` tag의 traffic은 0%이고 기존 `tsfix` revision이 100% traffic을 계속 받는다. service
-IAM invoker도 Backend runtime service account 한 개로 유지됐다.
+측정 뒤 동일 image·CPU 4·8GiB의 `chemicheck119-speech-api-preview-baseline1`을 다시 최신
+template이자 100% traffic revision으로 배포했다. `mem4g` tag는 0%이고 service IAM invoker도
+Backend runtime service account 한 개로 유지됐다. 이는 다음 배포가 4GiB 설정을 무심코
+상속하지 않게 하는 복원 조치이며 image build나 후보 삭제는 수행하지 않았다.
 
 | 항목 | 30초 후보 | 58초 후보 |
 |---|---:|---:|
@@ -91,7 +93,7 @@ IAM invoker도 Backend runtime service account 한 개로 유지됐다.
 
 - 사전 등록한 두 길이의 기능·안전 Gate는 통과했다.
 - 따라서 4GiB를 **추가 검증할 우선 후보**로 채택한다.
-- 동일 합성 문장을 반복한 성공 6건뿐이므로 live 100% traffic은 8GiB `tsfix`에 유지한다.
+- 동일 합성 문장을 반복한 성공 6건뿐이므로 live 100% traffic은 8GiB `baseline1`에 유지한다.
 - 서로 다른 공개 승인 음성, 독립 cold start, 반복 warm sequence와 장시간 leak 관찰 전에는
   상용 기본값이나 안전한 최소 메모리로 표현하지 않는다.
 
@@ -107,4 +109,6 @@ IAM invoker도 Backend runtime service account 한 개로 유지됐다.
   `ee5b54c96cbbe46dccc606ac2ee43cdd1b796cc48ef1a4dafa2e41e6f3cd4c84`
 - 58초 provenance SHA-256:
   `9aea4457807587cf2e5dc6b42414bf94c8f866aa3765c3b8db739a4b9736472d`
+- 8GiB 복원 뒤 static audit 11/11 SHA-256:
+  `64721f51f1f917739753b8e83d577ca45d7ba9b559385d15c11199c2aaa34d16`
 - 보고서에는 음성·전사문·응답 본문·credential이 들어 있지 않다.
