@@ -5,7 +5,8 @@
 - build·identity·deploy·read-only audit 하네스: **구현 완료**
 - 실제 GCP service·IAM·Secret 적용: **개발용 preview 구현 완료**
 - Backend 연결·제한 WAV 1건 추론: **부분 구현 또는 개발용 데모**
-- cold/warm 반복·부하·실패 경계: **설계 완료·구현 전**
+- cold/warm·직접 5×5 burst·실패 경계: **부분 구현 또는 개발용 데모 — 검증 완료**
+- process peak·축소 자원·GPU 비교: **설계 완료·구현 전**
 - 실제 Pad·현장 무전 효과: **검증되지 않은 가설**
 
 실제 service revision과 추론을 확인한 뒤에도 범위는 **부분 구현 또는 개발용 데모**입니다.
@@ -107,6 +108,10 @@ setup은 기존 Secret을 덮어쓰거나 회전하지 않습니다. build는 �
 | 동시 5요청 | 200 1건 + 429 `SPEECH_BUSY` 4건, Speech 호출 1건 | 단일 Backend 인스턴스의 bounded burst |
 | Backend backpressure artifact SHA-256 | `73cdcf127709a357944e0eb130ae06ca6e6afe3433feceb1688f970de7971e1d` | 비공개 집계 보고서 무결성 |
 | Backend timeout 계약 | 100ms client timeout·500ms mock header 지연, upstream 호출 1건, BFF 504 | 축소된 로컬 mock의 분류·무재시도 계약 |
+| Speech 직접 5×5 burst | 200 18건 + 앱 429 7건, 플랫폼 429 0건 | 짧은 합성 입력의 queue·busy 분포 |
+| 직접 burst E2E | median 6.5303초, p95 13.4498초, max 23.6898초 | 추론 외 대기 포함 client 관찰값 |
+| 직접 burst 추론 | median 3.3290초, max 3.6127초, RTF max 0.4855 | CPU small int8 성공 18건 |
+| 직접 burst artifact SHA-256 | `fbb3a2c1c382139d796fe0e1bbf23e60e101cec1eb1eb2501275faae71578093` | 비공개 집계 보고서 무결성 |
 | runtime storage 권한 | project role 0, bucket binding 0, user key 0 | GCS 영속 경로 차단 |
 | storage audit artifact SHA-256 | `7ebacda7ea430063bba79f32e5993549465d0ff23b8609fada7e3d935ffe5c37` | 권한·코드 경계 집계 무결성 |
 | scale-to-zero cold | startup→ready 7.7734초, E2E 14.4097초 | 단일 cold 관찰값 |
@@ -126,6 +131,8 @@ setup은 기존 Secret을 덮어쓰거나 회전하지 않습니다. build는 �
 - 독립 scale-to-zero cold start latency 1건 — 완료, 분포·tail은 미측정
 - 16MiB·60초·WAV 형식 경계와 동시 요청 `SPEECH_BUSY` 확인 — 완료
 - 단일 Backend 인스턴스의 동시 5요청 fail-fast와 Speech 호출 1건 확인 — 완료
+- private Speech API 직접 동시 5요청 5회와 Cloud Run request log 25/25 대조 — 완료,
+  warm batch에서 4개 직렬 성공·긴 tail이 관찰되어 Backend fail-fast 유지
 - 축소 timeout mock의 `SPEECH_TIMEOUT`·BFF 504·자동 재시도 0건 확인 — 완료,
   실제 Cloud Run 45초 timeout은 미측정
 - 원본 음성·전사문 비보존 — 로그·코드·migration·GCS runtime 권한 확인 완료
@@ -134,3 +141,6 @@ setup은 기존 Secret을 덮어쓰거나 회전하지 않습니다. build는 �
 남은 실제 Cloud Run timeout fault·더 큰 부하·다중 인스턴스 전역 제한·자원 축소 비교는
 infra #27에서 추적합니다. 이 검증 전에는 “GCP에서 실제 음성 기능 운영”이라고 주장하지
 않습니다.
+
+직접 burst의 protocol·실패 r1·GPU 판단은
+[`SPEECH_API_BURST_EVALUATION.md`](SPEECH_API_BURST_EVALUATION.md)에 분리해 기록했습니다.

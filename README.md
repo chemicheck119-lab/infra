@@ -99,7 +99,8 @@ transfer ceiling은 $0.25, 등록된 독립 실행 ceiling은 9,032원이고 이
 Speech API는 embedded `small` model의 immutable image digest를 개발용 preview에 배포했고,
 Backend runtime service account만 invoker로 허용했습니다. min instance 0, max instance 1을
 유지합니다. Cloud Run request concurrency는 4이고 애플리케이션 실제 추론 semaphore는 1이라,
-추가 요청은 모델을 동시에 실행하지 않고 1초 이내 busy 응답을 반환하도록 구성합니다.
+추가 요청은 모델을 동시에 실행하지 않고 application 진입 후 1초 이내 busy 응답을
+반환하도록 구성합니다.
 AIHub 광주 화재 신고 Validation WAV 30.16초 1건을 Backend BFF를 통해
 요청했을 때 HTTP 200, Speech 처리시간 4.5004초, RTF 0.1492를 확인했습니다. 원음 미보존,
 hotword 미사용, 사람 검토 필수, 물질 식별·CAS 확인·위험도 판단 미수행 경계도 응답 계약에서
@@ -107,20 +108,25 @@ hotword 미사용, 사람 검토 필수, 물질 식별·CAS 확인·위험도 �
 
 동시 2요청 A/B에서는 concurrency 1일 때 둘째 요청이 9.2474초까지 직렬 대기했습니다.
 request concurrency를 4로 바꾼 뒤에는 한 건만 추론하고 다른 한 건을 1.3062초에
-`SPEECH_BUSY`·retryable로 반환해 빠른 backpressure를 확인했습니다. 4개 초과 burst는
-아직 검증 전입니다.
+`SPEECH_BUSY`·retryable로 반환해 빠른 backpressure를 확인했습니다. 직접 5요청을 5회
+반복했을 때는 `200 18 + 앱 429 7`이었고, 성공 E2E 최대 23.6898초 중 실제 추론 최대는
+3.6127초였습니다. 플랫폼이 요청을 직렬 대기시킬 수 있어 application semaphore만으로
+모든 초과 요청의 E2E fail-fast를 보장하지 못합니다. 따라서 Backend의 1-in-flight Gate를
+유지합니다.
 
 instance 종료 로그 뒤 같은 30.16초 WAV를 보낸 scale-to-zero cold smoke의 E2E는
 14.4097초였습니다. warm-sequence E2E median 4.8307초보다 9.5790초 길었습니다. 이는
 단일 cold 관찰값이므로 tail latency나 제한 시간 내 성공 보장이 아닙니다.
 
-이 값들은 제한된 연결·동시 2요청·cold smoke 결과입니다. memory peak, 4개 초과
-burst·timeout, 교차지역 정확도 또는 현장 무전 안전성을 검증한 결과가 아닙니다.
+이 값들은 제한된 연결·동시 요청·cold smoke 결과입니다. memory process peak, 자원 축소,
+실제 timeout, 교차지역 정확도 또는 현장 무전 안전성을 검증한 결과가 아닙니다.
 따라서 상태는
 **부분 구현 또는 개발용 데모**이며 상용 운영 경험으로 표현하지 않습니다.
 
 실행 순서와 IAM·Secret·비용 Gate는
 [Speech API private Cloud Run 배포](docs/SPEECH_API_CLOUD_RUN.md)를 따릅니다.
+직접 5×5 분포와 queue 병목·GPU 판단은
+[Speech API 직접 burst 평가](docs/SPEECH_API_BURST_EVALUATION.md)에 기록합니다.
 
 ## 비용 경계
 

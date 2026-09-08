@@ -47,9 +47,11 @@ python3 -m py_compile "${SCRIPT_DIRECTORY}/validate_lora_cost_quote.py"
 python3 -m py_compile "${SCRIPT_DIRECTORY}/audit_artifact_cleanup.py"
 python3 -m py_compile "${SCRIPT_DIRECTORY}/audit_cloud_sql_hardening.py"
 python3 -m py_compile "${SCRIPT_DIRECTORY}/audit_private_speech_api.py"
+python3 -m py_compile "${SCRIPT_DIRECTORY}/evaluate_private_speech_burst.py"
 python3 "${SCRIPT_DIRECTORY}/audit_artifact_cleanup.py" --self-test
 python3 "${SCRIPT_DIRECTORY}/audit_cloud_sql_hardening.py" --self-test
 python3 "${SCRIPT_DIRECTORY}/audit_private_speech_api.py" --self-test
+python3 "${SCRIPT_DIRECTORY}/evaluate_private_speech_burst.py" --self-test
 grep -q '"storage",' "${SCRIPT_DIRECTORY}/audit_artifact_cleanup.py"
 grep -q '"objects",' "${SCRIPT_DIRECTORY}/audit_artifact_cleanup.py"
 grep -q 'candidate_bytes_subject_to_soft_delete_retention' \
@@ -63,6 +65,11 @@ fi
 if grep -Eq '"(patch|update|delete|deploy|replace)"' \
   "${SCRIPT_DIRECTORY}/audit_cloud_sql_hardening.py"; then
   echo "cloud sql hardening auditor must remain read-only" >&2
+  exit 1
+fi
+if grep -Eq 'gcloud.*(add-iam-policy-binding|remove-iam-policy-binding|deploy|update|delete)' \
+  "${SCRIPT_DIRECTORY}/evaluate_private_speech_burst.py"; then
+  echo "Speech burst evaluator must not mutate GCP resources" >&2
   exit 1
 fi
 grep -q '^LORA_MAX_RUN_SECONDS=10800$' "${INFRA_DIRECTORY}/config/ml.env"
