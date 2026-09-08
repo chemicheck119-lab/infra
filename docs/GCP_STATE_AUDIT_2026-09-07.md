@@ -6,6 +6,9 @@
 리소스를 생성·수정·삭제하거나 traffic을 변경하지 않았습니다. 이 문서는 단일 시점 inventory와
 설정 gap이며 실제 청구서, 침투 테스트, 고가용성 검증 또는 상용 운영 실적이 아닙니다.
 
+Cloud Run·Cloud SQL·Artifact Registry·Cloud Build 항목은 2026-09-08 11:19 KST에
+읽기 전용으로 다시 확인했습니다. 표와 저장소 항목은 이 최신 관측값을 우선합니다.
+
 ## 요약
 
 | 영역 | 관찰값 | 사실 상태 |
@@ -13,13 +16,13 @@
 | Billing budget | 월 50,000원, `CURRENT_SPEND` 100% 단일 threshold | 구현 완료 |
 | Cloud Run Model API IAM | preview·staging 모두 `allUsers` 없음 | 구현 완료 |
 | Cloud Run FE·BE IAM | FE·BE `allUsers` invoker | 개발용 공개 edge |
-| Cloud Run min instance | 네 서비스 모두 0 | 구현 완료 |
+| Cloud Run min instance | 다섯 서비스 모두 0 | 구현 완료 |
 | Compute Engine | 실행 중·중지 instance 모두 0대 | 구현 완료 |
 | Cloud SQL | PostgreSQL 16, `db-f1-micro`, `RUNNABLE`, `ZONAL` | 개발용 staging |
 | Cloud SQL 보호 | backup·PITR·deletion protection 활성 | 구현 완료 |
 | Cloud SQL TLS | `ALLOW_UNENCRYPTED_AND_ENCRYPTED` | 개선 필요 |
 | Cloud SQL storage | 10GB, auto-resize 활성, 상한 0 | 개선 필요 |
-| Artifact Registry | 실제 repository 약 10.10GB, cleanup policy 없음 | 개선 필요 |
+| Artifact Registry | 실제 repository 약 10.91GB, cleanup policy 없음 | 개선 필요 |
 | ML GCS | 약 3.87GB, PAP·uniform access·30/90일 lifecycle | 구현 완료 |
 | Cloud Build GCS | 약 1.99GB, lifecycle 없음, soft delete 7일 | 개선 필요 |
 | Speech Cloud Run Jobs | 5개, 최신 실행 모두 성공, task 1·parallelism 1·retry 0 | 개발용 평가 |
@@ -32,16 +35,17 @@
 | 서비스 | IAM invoker | ingress | 현재 revision max instance | traffic tag |
 |---|---|---|---:|---:|
 | `chemicheck119-fe-develop` | `allUsers` | all | 3 | 0 |
-| `chemicheck119-be-staging` | `allUsers` | all | 1 | 21 |
+| `chemicheck119-be-staging` | `allUsers` | all | 1 | 24 |
 | `chemicheck119-model-api-preview` | 사용자·배포 SA·runtime SA만 | all | 3 | 3 |
 | `chemicheck119-model-api-staging` | 사용자·배포 SA·runtime SA만 | all | 3 | 5 |
+| `chemicheck119-speech-api-preview` | Backend runtime SA만 | all | 1 | 0 |
 
 Model API는 인터넷 ingress가 열려 있어도 IAM에 `allUsers`·`allAuthenticatedUsers`가 없으므로
 인증 없는 호출은 허용되지 않습니다. FE·BE는 브라우저 접근을 위한 공개 edge이므로 공개
 invoker 자체가 인증 우회라는 뜻은 아닙니다. 애플리케이션 session·incident scope 검증은
 별도의 Backend 보안 경계입니다.
 
-BE staging은 100% traffic revision 1개 외에 zero-traffic candidate tag 20개가 남아 있습니다.
+BE staging은 100% traffic revision 1개 외에 zero-traffic candidate tag 23개가 남아 있습니다.
 tag URL은 service IAM을 공유하므로 호출 가능한 과거 revision 수명주기를 별도로 정해야 합니다.
 아직 tag를 제거하거나 revision을 삭제하지 않았습니다.
 
@@ -63,9 +67,10 @@ TLS 강제와 storage 상한 변경은 Backend JDBC URL·인증서 방식, migra
 
 ## 저장소와 빌드 artifact
 
-Artifact Registry `chemicheck119` repository는 약 10.10GB이며 cleanup policy가 없습니다.
-Docker manifest 기준으로는 41개 항목이고, package별 단순 합계는 layer 중복을 포함할 수 있어
-repository 실제 저장량과 다릅니다.
+Artifact Registry `chemicheck119` repository는 약 10.91GB이며 cleanup policy가 없습니다.
+Docker manifest 기준으로는 44개 항목입니다. 이전 package별 표는 2026-09-07 snapshot이고,
+최신 image별 감사는 [Artifact cleanup 문서](ARTIFACT_CLEANUP_AUDIT.md)를 기준으로 합니다.
+package별 단순 합계는 layer 중복을 포함할 수 있어 repository 실제 저장량과 다릅니다.
 
 | package | manifest 수 | manifest 표기 크기 합계 |
 |---|---:|---:|
@@ -74,9 +79,11 @@ repository 실제 저장량과 다릅니다.
 | `model-api-preview` | 14 | 약 5.24GiB |
 | `speech-eval` | 4 | 약 4.08GiB |
 
-Cloud Build bucket은 약 1.99GB이며 lifecycle이 없고 7일 soft delete가 적용되어 있습니다.
-삭제 정책은 현재 traffic revision, rollback 후보, 잠금 평가 image digest를 보호하도록
-keep 조건과 dry-run을 먼저 정의해야 합니다.
+Cloud Build bucket은 live archive 26개·약 1.99GB이며 lifecycle이 없고 7일 soft delete가
+적용되어 있습니다. 30일 lifecycle 모의 계산 후보는 17개·약 1.46GB입니다. 이 크기는 정책
+적용 즉시 영구 제거되거나 바로 비용에서 빠지는 값이 아닙니다. 삭제 정책은 현재 traffic
+revision, rollback 후보, 잠금 평가 image digest를 보호하도록 keep 조건과 dry-run을 먼저
+정의해야 합니다.
 
 ML bucket은 약 3.87GB입니다. public access prevention·uniform bucket access가 활성이고,
 `raw/`·`staging/`은 30일, `experiments/`는 90일 뒤 삭제되며 soft delete는 꺼져 있습니다.
@@ -85,8 +92,9 @@ ML bucket은 약 3.87GB입니다. public access prevention·uniform bucket acces
 
 Cloud Run Job 5개가 존재하고 최신 실행은 모두 성공했습니다. 모든 Job은 단일 task,
 parallelism 1, retry 0이며 외부 요청을 받는 서비스가 아닙니다. Compute Engine instance는
-0대여서 잔존 GPU·VM은 없습니다. 현재 실행 중인 Whisper LoRA는 로컬 Apple M4 MPS 실험이며
-GCP L4 운영 경험으로 표현하지 않습니다.
+0대여서 잔존 GPU·VM은 없습니다. Whisper LoRA는 로컬 Apple M4 MPS에서 전체 학습과
+clean·wind 평가를 완료했으나 wind Gate에서 후보를 기각했습니다. GCP L4 운영 경험으로
+표현하지 않습니다.
 
 ## 재현한 읽기 전용 명령
 
