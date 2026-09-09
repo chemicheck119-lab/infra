@@ -12,6 +12,7 @@ source "${SCRIPT_DIRECTORY}/common.sh"
 
 require_command gcloud
 require_project
+require_open_billing_account
 
 KEY_FILE="$1"
 if [[ -L "${KEY_FILE}" || ! -f "${KEY_FILE}" ]]; then

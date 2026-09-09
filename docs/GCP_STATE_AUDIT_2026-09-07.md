@@ -1,5 +1,9 @@
 # GCP 상태 감사 — 2026-09-07
 
+> 최신 상태: 2026-09-09 확인에서 연결 billing account가 `open=false`이고 FE·BE Cloud Run이
+> HTTP 503임을 확인했다. 아래 값은 과거 시점 inventory이며 현재 가용성으로 사용하지 않는다.
+> [GCP 결제·서비스 가용성 감사](GCP_BILLING_AVAILABILITY_2026-09-09.md)를 우선한다.
+
 ## 목적과 범위
 
 `chemi-check` 프로젝트를 2026-09-07 03:44 KST에 읽기 전용 `gcloud` 명령으로 확인했습니다.

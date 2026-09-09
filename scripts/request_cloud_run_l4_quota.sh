@@ -25,6 +25,7 @@ if gcloud beta quotas preferences describe "${PREFERENCE_ID}" \
   exit 0
 fi
 
+require_open_billing_account
 gcloud beta quotas preferences create \
   --project="${PROJECT_ID}" \
   --preference-id="${PREFERENCE_ID}" \

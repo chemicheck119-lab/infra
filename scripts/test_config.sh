@@ -8,6 +8,35 @@ for script in "${SCRIPT_DIRECTORY}"/*.sh; do
   bash -n "${script}"
 done
 
+test_billing_gate() (
+  local mock_billing_enabled="$1"
+  local mock_billing_open="$2"
+  # shellcheck disable=SC1091
+  source "${SCRIPT_DIRECTORY}/common.sh"
+  gcloud() {
+    if [[ "$*" == *"billingAccountName"* ]]; then
+      echo "billingAccounts/test-account"
+    elif [[ "$*" == *"billingEnabled"* ]]; then
+      echo "${mock_billing_enabled}"
+    elif [[ "$*" == *"value(open)"* ]]; then
+      echo "${mock_billing_open}"
+    else
+      return 1
+    fi
+  }
+  require_open_billing_account
+)
+
+test_billing_gate True True
+if test_billing_gate True False >/dev/null 2>&1; then
+  echo "closed billing account must fail the GCP mutation gate" >&2
+  exit 1
+fi
+if test_billing_gate False True >/dev/null 2>&1; then
+  echo "billing-disabled project must fail the GCP mutation gate" >&2
+  exit 1
+fi
+
 DEPLOY_SCRIPT="${SCRIPT_DIRECTORY}/deploy_speech_eval_job.sh"
 grep -q -- '--tasks=1' "${DEPLOY_SCRIPT}"
 grep -q -- '--parallelism=1' "${DEPLOY_SCRIPT}"
@@ -16,6 +45,19 @@ grep -q -- '--task-timeout=2h' "${DEPLOY_SCRIPT}"
 grep -q -- '--local-files-only' "${DEPLOY_SCRIPT}"
 grep -q 'roles/storage.objectViewer' "${SCRIPT_DIRECTORY}/setup_gcp_ml.sh"
 grep -q 'roles/storage.objectCreator' "${SCRIPT_DIRECTORY}/setup_gcp_ml.sh"
+for mutating_script in \
+  build_speech_api_image.sh \
+  build_speech_image.sh \
+  deploy_private_speech_api.sh \
+  deploy_speech_eval_job.sh \
+  request_cloud_run_l4_quota.sh \
+  run_speech_eval.sh \
+  run_whisper_lora_once.sh \
+  setup_gcp_ml.sh \
+  setup_speech_api_identity.sh \
+  upload_aihub_gwangju_fire.sh; do
+  grep -q '^require_open_billing_account$' "${SCRIPT_DIRECTORY}/${mutating_script}"
+done
 grep -q -- '--preferred-value=1' "${SCRIPT_DIRECTORY}/request_cloud_run_l4_quota.sh"
 grep -q '"age": 30' "${INFRA_DIRECTORY}/config/ml-bucket-lifecycle.json"
 grep -q '"age": 90' "${INFRA_DIRECTORY}/config/ml-bucket-lifecycle.json"
