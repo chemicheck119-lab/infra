@@ -12,6 +12,7 @@ source "${SCRIPT_DIRECTORY}/common.sh"
 
 require_command gcloud
 require_project
+require_open_billing_account
 
 SPEECH_REPOSITORY="$1"
 IMAGE_TAG="${2:-baseline-v1}"

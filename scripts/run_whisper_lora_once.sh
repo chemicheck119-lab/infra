@@ -9,6 +9,7 @@ require_command gcloud
 require_command git
 require_command python3
 require_project
+require_open_billing_account
 
 if [[ "${LORA_ZONE}" != "${LORA_REGION}-"* ]]; then
   echo "LoRA zone must belong to the registered region" >&2

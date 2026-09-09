@@ -12,6 +12,7 @@ source "${SCRIPT_DIRECTORY}/common.sh"
 
 require_command gcloud
 require_project
+require_open_billing_account
 
 AIHUB_DATA_ROOT="$1"
 DATA_PIPELINE_REPOSITORY="$2"

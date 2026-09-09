@@ -20,11 +20,17 @@
 | Compute Engine L4 LoRA runner | 구현 완료·실행 전 |
 | private Speech API Cloud Run | 개발용 preview 배포·IAM·Backend 연결 smoke 완료 |
 | Speech API runtime resource 관측 | 30초 합성 파생 입력 성공 3건의 numeric log 대조 완료; 자원 축소 판단 전 |
-| GCP 결제 예산 알림 | 월 50,000원·실제 지출 100% 단일 알림 구성 완료 |
+| GCP 결제 상태 | 월 50,000원·100% Budget 객체는 존재하나 연결 계정 `open=false`; 현재 유료 작업 실행 불가 |
+| GCP 결제 실행 Gate | 프로젝트 연결과 billing account `open=true`를 변경 전에 모두 확인 |
 | 고가용성 상용 운영 | 설계·검증 전 |
 
 2026-09-07 읽기 전용 현황과 비용·보안 gap은 [GCP 상태 감사](docs/GCP_STATE_AUDIT_2026-09-07.md)에
 기록합니다.
+
+2026-09-09에는 연결 billing account가 폐쇄 상태임을 확인했습니다. Firebase 정적 화면은
+응답하지만 FE·BE Cloud Run은 HTTP 503이고 Artifact Registry는 `BILLING_DISABLED`를
+반환합니다. 현재 가용성과 결제 복구 후 재검증 순서는
+[GCP 결제·서비스 가용성 감사](docs/GCP_BILLING_AVAILABILITY_2026-09-09.md)를 따릅니다.
 
 ## ML 평가 환경
 
@@ -140,5 +146,8 @@ instance 종료 로그 뒤 같은 30.16초 WAV를 보낸 scale-to-zero cold smok
 - 업로드 대상은 전체 87GB가 아니라 광주 화재 ZIP 4개(약 526MB)입니다.
 - 평가 Job은 수동 실행만 가능하고 실패 시 자동 재시도하지 않습니다.
 - 버킷 수명주기로 원본과 실험 산출물을 자동 정리합니다.
-- 월 50,000원 budget의 실제 지출 100% 알림이 구성되어 있습니다. 알림은 비용 차단 장치가
-  아니므로 현재 비용 통제는 실행 전 견적, 리소스 상한, retry 0과 수명주기를 함께 사용합니다.
+- 월 50,000원 budget의 실제 지출 100% 알림 객체는 존재하지만 현재 연결 billing account는
+  폐쇄 상태입니다. 계정을 다시 열거나 교체하면 알림 대상과 수신자를 재확인해야 합니다.
+- GCP 변경 스크립트는 프로젝트 연결뿐 아니라 billing account `open=true`를 먼저 확인합니다.
+  이 Gate와 예산 알림은 비용 차단 장치가 아니므로 실행 전 견적, 70,000원 누적 상한,
+  리소스 상한, retry 0과 수명주기를 함께 사용합니다.

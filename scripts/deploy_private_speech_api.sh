@@ -13,6 +13,7 @@ source "${SCRIPT_DIRECTORY}/common.sh"
 require_command gcloud
 require_command python3
 require_project
+require_open_billing_account
 
 IMAGE_DIGEST_URI="$1"
 EXPECTED_PREFIX="${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPOSITORY}/${SPEECH_API_IMAGE_NAME}@sha256:"

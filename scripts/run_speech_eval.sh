@@ -12,6 +12,7 @@ source "${SCRIPT_DIRECTORY}/common.sh"
 
 require_command gcloud
 require_project
+require_open_billing_account
 
 INPUT_PREFIX="gs://${ML_BUCKET}/raw/aihub/71768/gwangju-fire"
 OUTPUT_PREFIX="gs://${ML_BUCKET}/experiments/speech/aihub-71768-gwangju-fire"

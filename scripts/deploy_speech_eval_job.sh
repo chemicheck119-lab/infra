@@ -12,6 +12,7 @@ source "${SCRIPT_DIRECTORY}/common.sh"
 
 require_command gcloud
 require_project
+require_open_billing_account
 
 IMAGE="$1"
 INPUT_PREFIX="gs://${ML_BUCKET}/raw/aihub/71768/gwangju-fire"

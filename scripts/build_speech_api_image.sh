@@ -13,6 +13,7 @@ source "${SCRIPT_DIRECTORY}/common.sh"
 require_command gcloud
 require_command git
 require_project
+require_open_billing_account
 
 SPEECH_REPOSITORY="$1"
 SPEECH_REVISION="$2"
