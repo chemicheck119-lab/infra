@@ -1,5 +1,23 @@
 # GCP 결제·서비스 가용성 감사 — 2026-09-09
 
+## 21:12 KST 재확인
+
+2026-09-09 21:12 KST에 같은 항목을 읽기 전용으로 다시 확인했다. 프로젝트는 여전히
+`billingEnabled=true`를 반환하지만 연결된 결제 계정은 `open=false`였고, Artifact Registry
+조회도 `BILLING_DISABLED`로 거부됐다. 따라서 image 조회·build·배포를 재개할 조건은 아직
+충족되지 않았다.
+
+Firebase Hosting의 정적 진입점은 HTTP 200, 공개 `chemicheck119-fe-develop`과
+`chemicheck119-be-staging`은 각각 HTTP 500이었다. 비공개 Model preview·Model staging·Speech
+preview는 인증 없는 요청을 HTTP 403으로 거부했고, 세 서비스 모두 `allUsers` invoker가 없는
+것을 확인했다. 이 403은 IAM 비공개 설정이 적용된 결과이지 애플리케이션 health 성공 또는
+실패를 판정하는 값이 아니다. 결제 복구 후 서비스 계정 identity token을 사용한 내부 health
+검증이 필요하다.
+
+Cloud Run 서비스 메타데이터는 5개, Cloud SQL은 PostgreSQL 16·`db-f1-micro`·ZONAL·10GB·
+`RUNNABLE`·`ALWAYS`였고 Compute Engine instance와 disk는 각각 0개였다. 이번 재확인에서도
+리소스·traffic·IAM·DB·결제 설정을 변경하지 않았으며 추가 개발비는 0원이다.
+
 ## 결론
 
 2026-09-09 12:21 KST에 `chemi-check`를 읽기 전용으로 재확인한 결과, 프로젝트는 결제
