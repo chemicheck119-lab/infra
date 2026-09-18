@@ -1,5 +1,13 @@
 # 케미체크119 Infrastructure
 
+## 2026-09-18 프로젝트 상태
+
+- **구현 완료:** Cloud Run·Cloud SQL·Artifact/GCS·Secret·IAM·수동 평가 Job 배포 스크립트와 운영 검증 도구
+- **현재 서비스:** FE/BE/Model/Speech preview·staging 경계와 private model invocation을 문서화
+- **주의:** GCP 연결 billing account가 닫혀 있어 유료 변경·신규 ML 실행은 승인 전 수행하지 않음
+- **검증되지 않음:** 고가용성 상용 운영, GPU 성능 우위, 실제 현장 무전 성능, billing 복구 후 비용 안정성
+- **변경 원칙:** TLS·Cloud SQL·cleanup policy·quota·traffic 변경은 사용자 승인과 rollback 계획 후 적용
+
 케미체크119의 GCP 리소스와 재현 가능한 배포 스크립트를 관리합니다.
 
 ## 원칙
