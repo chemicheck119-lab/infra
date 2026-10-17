@@ -139,4 +139,5 @@ grep -q 'CHEMICHECK119_SPEECH_ALLOW_ANONYMOUS=false' "${SPEECH_API_DEPLOY}"
 grep -q 'invokers must contain only the Backend runtime service account' "${SPEECH_API_DEPLOY}"
 grep -q '실제 WAV' "${SPEECH_API_AUDIT}"
 
+PYTHONPATH="${SCRIPT_DIRECTORY}" python3 -m unittest discover -s "${SCRIPT_DIRECTORY}" -p 'test_cost_metadata.py' -v
 echo "Infrastructure configuration checks passed."
